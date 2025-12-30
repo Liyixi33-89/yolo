@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Camera, Image, RotateCcw, X } from 'lucide-react';
+import { Camera, Image, X } from 'lucide-react';
 
 interface ImagePickerProps {
   onImageSelect: (base64: string) => void;

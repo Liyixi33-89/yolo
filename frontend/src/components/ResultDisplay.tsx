@@ -4,8 +4,6 @@ import {
   ClassificationData,
   PoseData,
   SegmentData,
-  SceneAnalysis,
-  DetectedObject,
 } from '../services/api';
 
 interface ResultDisplayProps {
