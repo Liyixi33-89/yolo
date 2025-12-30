@@ -1,4 +1,4 @@
-import { TaskType, getTaskConfig, isTencentTask } from '../types';
+import { TaskType, getTaskConfig, isTencentTask, isBaiduTask } from '../types';
 import {
   DetectionData,
   ClassificationData,
@@ -8,9 +8,12 @@ import {
   TencentDetectionData,
   TencentLabelData,
   TencentCarData,
+  BaiduClassifyData,
+  BaiduDetectData,
+  BaiduFaceData,
 } from '../services/api';
 
-type ResultDataType = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | null;
+type ResultDataType = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | null;
 
 interface ResultDisplayProps {
   task: TaskType;
@@ -21,6 +24,7 @@ interface ResultDisplayProps {
 const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
   const taskConfig = getTaskConfig(task);
   const isTencent = isTencentTask(task);
+  const isBaidu = isBaiduTask(task);
 
   if (!data) return null;
 
@@ -614,6 +618,262 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
     );
   };
 
+  // ==================== 百度 AI 结果渲染 ====================
+
+  // 渲染百度 AI 图像分类结果
+  const renderBaiduClassifyResults = (classifyData: BaiduClassifyData) => {
+    const { items, count } = classifyData;
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-red-50 p-3">
+          <span className="text-sm text-red-700">🔴 百度AI图像分类</span>
+          <span className="text-lg font-bold text-red-700">{count} 个结果</span>
+        </div>
+
+        {items.length > 0 && (
+          <div className="rounded-lg border border-red-200 bg-white p-3">
+            <h4 className="mb-3 text-sm font-medium text-gray-700">🏞️ 识别结果</h4>
+            <div className="space-y-3">
+              {items.slice(0, 5).map((item, index) => (
+                <div
+                  key={index}
+                  className="rounded-lg bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 p-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-sm font-bold text-white">
+                        {index + 1}
+                      </span>
+                      <div>
+                        <p className="font-medium text-gray-800">{item.name}</p>
+                        {item.root && (
+                          <p className="text-xs text-gray-500">分类：{item.root}</p>
+                        )}
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-red-500 px-3 py-1 text-sm font-medium text-white">
+                      {(item.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  
+                  {/* 百科描述 */}
+                  {item.description && (
+                    <p className="mt-2 text-xs text-gray-600 line-clamp-2">
+                      {item.description}
+                    </p>
+                  )}
+                  
+                  {/* 百科链接 */}
+                  {item.baike_url && (
+                    <a
+                      href={item.baike_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center text-xs text-red-600 hover:underline"
+                    >
+                      📚 查看百科详情 →
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 置信度排行 */}
+        {items.length > 0 && (
+          <div className="rounded-lg border border-red-200 bg-white p-3">
+            <h4 className="mb-3 text-sm font-medium text-gray-700">📊 置信度分布</h4>
+            <div className="space-y-2">
+              {items.slice(0, 5).map((item, index) => (
+                <div key={index} className="relative">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-700">{item.name}</span>
+                    <span className="text-red-600 font-medium">
+                      {(item.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-red-400 to-orange-400 transition-all"
+                      style={{ width: `${item.confidence * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 渲染百度 AI 物体检测结果
+  const renderBaiduDetectResults = (detectData: BaiduDetectData) => {
+    const { objects, count } = detectData;
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-rose-50 p-3">
+          <span className="text-sm text-rose-700">🔴 百度AI物体检测</span>
+          <span className="text-lg font-bold text-rose-700">{count} 个目标</span>
+        </div>
+
+        {objects.length > 0 ? (
+          <div className="rounded-lg border border-rose-200 bg-white">
+            <h4 className="border-b border-rose-200 p-3 text-sm font-medium text-gray-700">
+              📦 检测详情
+            </h4>
+            <div className="max-h-48 overflow-y-auto">
+              {objects.map((obj, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between border-b border-gray-100 p-3 last:border-b-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-xs font-medium text-rose-700">
+                      {index + 1}
+                    </span>
+                    <span className="font-medium text-gray-800">
+                      {obj.name}
+                    </span>
+                  </div>
+                  <span className="rounded bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                    {(obj.confidence * 100).toFixed(1)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-gray-200 bg-white p-6 text-center">
+            <span className="text-4xl">🔍</span>
+            <p className="mt-2 text-gray-500">未检测到明显物体</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 渲染百度 AI 人脸识别结果
+  const renderBaiduFaceResults = (faceData: BaiduFaceData) => {
+    const { faces, count } = faceData;
+
+    // 情绪图标映射
+    const emotionIcons: Record<string, string> = {
+      '高兴': '😊',
+      '平静': '😐',
+      '惊讶': '😮',
+      '悲伤': '😢',
+      '愤怒': '😠',
+      '厌恶': '😖',
+      '恐惧': '😨',
+    };
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-pink-50 p-3">
+          <span className="text-sm text-pink-700">🔴 百度AI人脸识别</span>
+          <span className="text-lg font-bold text-pink-700">{count} 张人脸</span>
+        </div>
+
+        {faces.length > 0 ? (
+          faces.map((face, index) => (
+            <div
+              key={index}
+              className="rounded-xl border border-pink-200 bg-gradient-to-br from-pink-50 to-rose-50 p-4"
+            >
+              {/* 头部信息 */}
+              <div className="flex items-center gap-3 mb-4">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 text-2xl text-white">
+                  👤
+                </span>
+                <div className="flex-1">
+                  <h4 className="text-lg font-bold text-pink-700">
+                    人脸 #{face.face_id}
+                  </h4>
+                  <p className="text-sm text-gray-600">
+                    检测置信度: {(face.face_probability * 100).toFixed(0)}%
+                  </p>
+                </div>
+                <span className="text-3xl">
+                  {emotionIcons[face.emotion] || '😐'}
+                </span>
+              </div>
+
+              {/* 基本属性 */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <div className="rounded-lg bg-white/70 p-2 text-center">
+                  <span className="text-xs text-gray-500 block">年龄</span>
+                  <p className="text-lg font-bold text-pink-600">{Math.round(face.age)} 岁</p>
+                </div>
+                <div className="rounded-lg bg-white/70 p-2 text-center">
+                  <span className="text-xs text-gray-500 block">性别</span>
+                  <p className="text-lg font-bold text-pink-600">
+                    {face.gender === '男性' ? '👨 男' : '👩 女'}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white/70 p-2 text-center">
+                  <span className="text-xs text-gray-500 block">颜值</span>
+                  <p className="text-lg font-bold text-pink-600">{Math.round(face.beauty)} 分</p>
+                </div>
+              </div>
+
+              {/* 详细属性 */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-white/70 p-2">
+                  <span className="text-xs text-gray-500 block">表情</span>
+                  <p className="font-medium text-gray-800">{face.expression}</p>
+                </div>
+                <div className="rounded-lg bg-white/70 p-2">
+                  <span className="text-xs text-gray-500 block">情绪</span>
+                  <p className="font-medium text-gray-800">{face.emotion}</p>
+                </div>
+                <div className="rounded-lg bg-white/70 p-2">
+                  <span className="text-xs text-gray-500 block">眼镜</span>
+                  <p className="font-medium text-gray-800">{face.glasses}</p>
+                </div>
+                <div className="rounded-lg bg-white/70 p-2">
+                  <span className="text-xs text-gray-500 block">口罩</span>
+                  <p className="font-medium text-gray-800">{face.mask}</p>
+                </div>
+                <div className="rounded-lg bg-white/70 p-2">
+                  <span className="text-xs text-gray-500 block">脸型</span>
+                  <p className="font-medium text-gray-800">{face.face_shape}</p>
+                </div>
+                <div className="rounded-lg bg-white/70 p-2">
+                  <span className="text-xs text-gray-500 block">角度</span>
+                  <p className="font-medium text-gray-800">{Math.round(face.rotation_angle)}°</p>
+                </div>
+              </div>
+
+              {/* 颜值条 */}
+              <div className="mt-3">
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="text-gray-500">颜值评分</span>
+                  <span className="text-pink-600 font-medium">{Math.round(face.beauty)}/100</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-pink-400 to-rose-500 transition-all"
+                    style={{ width: `${face.beauty}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-lg border border-gray-200 bg-white p-6 text-center">
+            <span className="text-4xl">🚫</span>
+            <p className="mt-2 text-gray-500">未检测到人脸</p>
+            <p className="mt-1 text-xs text-gray-400">请确保图片中包含清晰的人脸</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // 根据任务类型选择渲染方法
   const renderResults = () => {
     switch (task) {
@@ -635,6 +895,13 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
         return renderTencentLabelResults(data as TencentLabelData);
       case 'tencent_car':
         return renderTencentCarResults(data as TencentCarData);
+      // 百度 AI
+      case 'baidu_classify':
+        return renderBaiduClassifyResults(data as BaiduClassifyData);
+      case 'baidu_detect':
+        return renderBaiduDetectResults(data as BaiduDetectData);
+      case 'baidu_face':
+        return renderBaiduFaceResults(data as BaiduFaceData);
       default:
         return null;
     }
@@ -654,13 +921,13 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
       )}
 
       {/* 任务标签 */}
-      <div className={`flex items-center gap-2 rounded-lg p-2 ${isTencent ? 'bg-blue-50' : 'bg-amber-50'}`}>
+      <div className={`flex items-center gap-2 rounded-lg p-2 ${isBaidu ? 'bg-red-50' : isTencent ? 'bg-blue-50' : 'bg-amber-50'}`}>
         <span className="text-xl">{taskConfig?.icon}</span>
-        <span className={`font-medium ${isTencent ? 'text-blue-700' : 'text-amber-700'}`}>
+        <span className={`font-medium ${isBaidu ? 'text-red-700' : isTencent ? 'text-blue-700' : 'text-amber-700'}`}>
           {taskConfig?.name}
         </span>
-        <span className={`ml-auto rounded-full px-2 py-0.5 text-xs ${isTencent ? 'bg-blue-200 text-blue-700' : 'bg-amber-200 text-amber-700'}`}>
-          {isTencent ? '腾讯云' : 'YOLO'}
+        <span className={`ml-auto rounded-full px-2 py-0.5 text-xs ${isBaidu ? 'bg-red-200 text-red-700' : isTencent ? 'bg-blue-200 text-blue-700' : 'bg-amber-200 text-amber-700'}`}>
+          {isBaidu ? '百度AI' : isTencent ? '腾讯云' : 'YOLO'}
         </span>
       </div>
 

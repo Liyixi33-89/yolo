@@ -4,11 +4,14 @@ export type YoloTaskType = 'detect' | 'classify' | 'pose' | 'segment' | 'lpr';
 // 任务类型 - 腾讯云检测
 export type TencentTaskType = 'tencent_detect' | 'tencent_label' | 'tencent_car';
 
+// 任务类型 - 百度 AI
+export type BaiduTaskType = 'baidu_classify' | 'baidu_detect' | 'baidu_face';
+
 // 所有任务类型
-export type TaskType = YoloTaskType | TencentTaskType;
+export type TaskType = YoloTaskType | TencentTaskType | BaiduTaskType;
 
 // 任务提供商
-export type TaskProvider = 'yolo' | 'tencent';
+export type TaskProvider = 'yolo' | 'tencent' | 'baidu';
 
 // 任务配置
 export interface TaskConfig {
@@ -104,6 +107,34 @@ export const TENCENT_TASKS: TaskConfig[] = [
   },
 ];
 
+// 百度 AI 任务列表
+export const BAIDU_TASKS: TaskConfig[] = [
+  {
+    id: 'baidu_classify',
+    name: '图像分类',
+    description: '百度AI通用物体场景识别',
+    icon: '🏞️',
+    color: 'bg-red-500',
+    provider: 'baidu',
+  },
+  {
+    id: 'baidu_detect',
+    name: '物体检测',
+    description: '百度AI图像主体检测',
+    icon: '📦',
+    color: 'bg-rose-500',
+    provider: 'baidu',
+  },
+  {
+    id: 'baidu_face',
+    name: '人脸识别',
+    description: '检测人脸年龄性别表情',
+    icon: '👤',
+    color: 'bg-pink-500',
+    provider: 'baidu',
+  },
+];
+
 // 任务分组
 export const TASK_GROUPS: TaskGroup[] = [
   {
@@ -126,10 +157,20 @@ export const TASK_GROUPS: TaskGroup[] = [
     borderColor: 'border-blue-200',
     tasks: TENCENT_TASKS,
   },
+  {
+    id: 'baidu',
+    name: '百度 AI',
+    description: '使用百度AI开放平台进行分析',
+    icon: '🔴',
+    color: 'text-red-600',
+    bgColor: 'bg-red-50',
+    borderColor: 'border-red-200',
+    tasks: BAIDU_TASKS,
+  },
 ];
 
 // 所有任务列表
-export const TASKS: TaskConfig[] = [...YOLO_TASKS, ...TENCENT_TASKS];
+export const TASKS: TaskConfig[] = [...YOLO_TASKS, ...TENCENT_TASKS, ...BAIDU_TASKS];
 
 // 获取任务配置
 export const getTaskConfig = (taskId: TaskType): TaskConfig | undefined => {
@@ -145,4 +186,9 @@ export const getTaskProvider = (taskId: TaskType): TaskProvider => {
 // 判断是否是腾讯云任务
 export const isTencentTask = (taskId: TaskType): boolean => {
   return taskId.startsWith('tencent_');
+};
+
+// 判断是否是百度 AI 任务
+export const isBaiduTask = (taskId: TaskType): boolean => {
+  return taskId.startsWith('baidu_');
 };

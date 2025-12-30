@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { ArrowLeft, Send, RotateCcw, Zap, Cloud } from 'lucide-react';
 import { ImagePicker, TaskSelector, ResultDisplay, Loading } from '../components';
-import { TaskType, isTencentTask } from '../types';
+import { TaskType, isTencentTask, isBaiduTask } from '../types';
 import {
   detectObjects,
   classifyImage,
@@ -11,6 +11,9 @@ import {
   tencentDetect,
   tencentLabel,
   tencentCarRecognize,
+  baiduClassify,
+  baiduDetect,
+  baiduFaceDetect,
   DetectionData,
   ClassificationData,
   PoseData,
@@ -19,9 +22,12 @@ import {
   TencentDetectionData,
   TencentLabelData,
   TencentCarData,
+  BaiduClassifyData,
+  BaiduDetectData,
+  BaiduFaceData,
 } from '../services/api';
 
-type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | null;
+type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | null;
 
 const HomePage = () => {
   const [selectedTask, setSelectedTask] = useState<TaskType>('detect');
@@ -32,8 +38,10 @@ const HomePage = () => {
   const [error, setError] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
 
-  // 判断是否是腾讯云任务
+  // 判断任务类型
   const isTencent = isTencentTask(selectedTask);
+  const isBaidu = isBaiduTask(selectedTask);
+  const isCloud = isTencent || isBaidu;
 
   // 处理图片选择
   const handleImageSelect = useCallback((base64: string) => {
@@ -114,6 +122,22 @@ const HomePage = () => {
           response = await tencentCarRecognize(imageBase64);
           setResult(response.data);
           break;
+
+        // 百度 AI
+        case 'baidu_classify':
+          response = await baiduClassify(imageBase64);
+          setResult(response.data);
+          break;
+
+        case 'baidu_detect':
+          response = await baiduDetect(imageBase64);
+          setResult(response.data);
+          break;
+
+        case 'baidu_face':
+          response = await baiduFaceDetect(imageBase64);
+          setResult(response.data);
+          break;
       }
 
       setShowResult(true);
@@ -139,6 +163,31 @@ const HomePage = () => {
     setShowResult(false);
   }, []);
 
+  // 获取品牌颜色
+  const getBrandColor = () => {
+    if (isBaidu) return { text: 'text-red-500', bg: 'bg-red-500', shadow: 'shadow-red-500/30' };
+    if (isTencent) return { text: 'text-blue-500', bg: 'bg-blue-500', shadow: 'shadow-blue-500/30' };
+    return { text: 'text-amber-500', bg: 'bg-amber-500', shadow: 'shadow-amber-500/30' };
+  };
+
+  const brandColor = getBrandColor();
+
+  // 获取品牌图标和名称
+  const getBrandInfo = () => {
+    if (isBaidu) return { icon: '🔴', name: '百度AI' };
+    if (isTencent) return { icon: <Cloud className="h-6 w-6 text-blue-500" />, name: '腾讯云AI' };
+    return { icon: <Zap className="h-6 w-6 text-amber-500" />, name: 'YOLO11' };
+  };
+
+  const brandInfo = getBrandInfo();
+
+  // 获取加载提示文字
+  const getLoadingText = () => {
+    if (isBaidu) return '百度 AI 正在分析...';
+    if (isTencent) return '腾讯云 AI 正在分析...';
+    return 'YOLO 正在分析图像...';
+  };
+
   return (
     <div className="flex min-h-full flex-col bg-gray-50">
       {/* 顶部导航栏 */}
@@ -155,17 +204,12 @@ const HomePage = () => {
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            {isTencent ? (
-              <>
-                <Cloud className="h-6 w-6 text-blue-500" />
-                <span className="text-lg font-bold text-gray-800">腾讯云AI</span>
-              </>
+            {typeof brandInfo.icon === 'string' ? (
+              <span className="text-2xl">{brandInfo.icon}</span>
             ) : (
-              <>
-                <Zap className="h-6 w-6 text-amber-500" />
-                <span className="text-lg font-bold text-gray-800">YOLO11</span>
-              </>
+              brandInfo.icon
             )}
+            <span className="text-lg font-bold text-gray-800">{brandInfo.name}</span>
           </div>
         )}
         
@@ -240,9 +284,7 @@ const HomePage = () => {
               className={`
                 flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-medium transition-all
                 ${imageBase64 && !isLoading
-                  ? isTencent 
-                    ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30 active:scale-[0.98]'
-                    : 'bg-amber-500 text-white shadow-lg shadow-amber-500/30 active:scale-[0.98]'
+                  ? `${brandColor.bg} text-white shadow-lg ${brandColor.shadow} active:scale-[0.98]`
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }
               `}
@@ -256,8 +298,8 @@ const HomePage = () => {
                 </>
               ) : (
                 <>
-                  {isTencent ? <Cloud size={20} /> : <Send size={20} />}
-                  <span>{isTencent ? '云端识别' : '本地识别'}</span>
+                  {isCloud ? <Cloud size={20} /> : <Send size={20} />}
+                  <span>{isCloud ? '云端识别' : '本地识别'}</span>
                 </>
               )}
             </button>
@@ -269,7 +311,7 @@ const HomePage = () => {
       {isLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
           <div className="rounded-2xl bg-white p-6 shadow-xl">
-            <Loading message={isTencent ? '腾讯云 AI 正在分析...' : 'YOLO 正在分析图像...'} />
+            <Loading message={getLoadingText()} />
           </div>
         </div>
       )}

@@ -349,4 +349,113 @@ export const tencentCarRecognize = async (
   return response.data;
 };
 
+// ==================== 百度 AI API ====================
+
+// 百度 AI 图像分类项
+export interface BaiduClassifyItem {
+  name: string;           // 名称
+  confidence: number;     // 置信度
+  root: string;           // 分类层级
+  baike_url?: string;     // 百科链接
+  description?: string;   // 百科描述
+}
+
+// 百度 AI 物体检测项
+export interface BaiduDetectItem {
+  name: string;
+  confidence: number;
+  bbox: BBox;
+}
+
+// 百度 AI 人脸识别项
+export interface BaiduFaceItem {
+  face_id: number;
+  age: number;
+  beauty: number;
+  gender: string;
+  gender_confidence: number;
+  expression: string;
+  expression_confidence: number;
+  emotion: string;
+  emotion_confidence: number;
+  glasses: string;
+  mask: string;
+  face_shape: string;
+  face_probability: number;
+  bbox: BBox;
+  rotation_angle: number;
+}
+
+// 百度 AI 图像分类响应
+export interface BaiduClassifyData {
+  items: BaiduClassifyItem[];
+  count: number;
+  log_id?: number;
+  source: string;
+}
+
+// 百度 AI 物体检测响应
+export interface BaiduDetectData {
+  objects: BaiduDetectItem[];
+  count: number;
+  log_id?: number;
+  source: string;
+}
+
+// 百度 AI 人脸识别响应
+export interface BaiduFaceData {
+  faces: BaiduFaceItem[];
+  count: number;
+  log_id?: number;
+  source: string;
+}
+
+// 百度 AI API 类型
+export type BaiduApiType = 'classify' | 'detect' | 'face';
+
+// 百度 AI 状态检查
+export const checkBaiduStatus = async () => {
+  const response = await api.get('/api/baidu/status');
+  return response.data;
+};
+
+// 百度 AI 图像分类
+export const baiduClassify = async (
+  imageBase64: string
+): Promise<APIResponse<BaiduClassifyData>> => {
+  const response = await api.post('/api/baidu/detect', {
+    image_base64: imageBase64,
+    api_type: 'classify'
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return response.data;
+};
+
+// 百度 AI 物体检测
+export const baiduDetect = async (
+  imageBase64: string
+): Promise<APIResponse<BaiduDetectData>> => {
+  const response = await api.post('/api/baidu/detect', {
+    image_base64: imageBase64,
+    api_type: 'detect'
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return response.data;
+};
+
+// 百度 AI 人脸识别
+export const baiduFaceDetect = async (
+  imageBase64: string
+): Promise<APIResponse<BaiduFaceData>> => {
+  const response = await api.post('/api/baidu/detect', {
+    image_base64: imageBase64,
+    api_type: 'face'
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return response.data;
+};
+
 export default api;

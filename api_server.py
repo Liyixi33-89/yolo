@@ -52,6 +52,15 @@ except Exception as e:
     lpr_model = None
     logger.warning(f"HyperLPR3 初始化失败: {e}")
 
+# 百度 AI 开放平台
+try:
+    from aip import AipImageClassify, AipBodyAnalysis, AipFace
+    BAIDU_AI_AVAILABLE = True
+    logger.info("百度 AI SDK 已加载")
+except ImportError:
+    BAIDU_AI_AVAILABLE = False
+    logger.warning("百度 AI SDK 未安装，请安装：pip install baidu-aip")
+
 
 # ==================== FastAPI 应用初始化 ====================
 app = FastAPI(
@@ -113,6 +122,44 @@ class LPRRequest(BaseModel):
     """车牌识别请求模型"""
     image_base64: str
     return_image: bool = True
+
+
+class BaiduAIRequest(BaseModel):
+    """百度 AI 请求模型"""
+    image_base64: str
+    api_type: str = "classify"  # classify: 图像分类, detect: 物体检测, face: 人脸识别
+
+
+# ==================== 百度 AI 配置 ====================
+class BaiduAIConfig:
+    """百度 AI 配置管理"""
+    # 从环境变量读取密钥（安全方式）
+    APP_ID = os.environ.get("BAIDU_APP_ID", "")
+    API_KEY = os.environ.get("BAIDU_API_KEY", "")
+    SECRET_KEY = os.environ.get("BAIDU_SECRET_KEY", "")
+    
+    @classmethod
+    def is_configured(cls) -> bool:
+        """检查是否已配置"""
+        return bool(cls.APP_ID and cls.API_KEY and cls.SECRET_KEY)
+    
+    @classmethod
+    def get_image_client(cls):
+        """获取百度图像识别客户端"""
+        if not BAIDU_AI_AVAILABLE:
+            raise HTTPException(status_code=500, detail="百度 AI SDK 未安装")
+        if not cls.is_configured():
+            raise HTTPException(status_code=500, detail="百度 AI 密钥未配置，请设置环境变量 BAIDU_APP_ID, BAIDU_API_KEY 和 BAIDU_SECRET_KEY")
+        return AipImageClassify(cls.APP_ID, cls.API_KEY, cls.SECRET_KEY)
+    
+    @classmethod
+    def get_face_client(cls):
+        """获取百度人脸识别客户端"""
+        if not BAIDU_AI_AVAILABLE:
+            raise HTTPException(status_code=500, detail="百度 AI SDK 未安装")
+        if not cls.is_configured():
+            raise HTTPException(status_code=500, detail="百度 AI 密钥未配置")
+        return AipFace(cls.APP_ID, cls.API_KEY, cls.SECRET_KEY)
 
 
 # ==================== 腾讯云配置 ====================
@@ -1185,6 +1232,242 @@ async def lpr_status():
     })
 
 
+# ==================== 百度 AI 开放平台 API ====================
+@app.post("/api/baidu/detect")
+async def baidu_ai_detect(request: BaiduAIRequest):
+    """
+    百度 AI 图像识别 API
+    支持图像分类、物体检测、人脸识别
+    
+    - image_base64: Base64 编码的图像
+    - api_type: API类型 (classify: 图像分类, detect: 物体检测, face: 人脸识别)
+    """
+    try:
+        logger.info(f"[BaiduAI] 收到请求，API类型: {request.api_type}")
+        
+        # 处理 Base64 数据（移除可能的前缀）
+        image_base64 = request.image_base64
+        if ',' in image_base64:
+            image_base64 = image_base64.split(',')[1]
+        
+        # 将 Base64 转换为二进制
+        image_bytes = base64.b64decode(image_base64)
+        
+        if request.api_type == "classify":
+            # 图像分类 - 使用通用物体和场景识别
+            client = BaiduAIConfig.get_image_client()
+            
+            # 调用通用物体和场景识别接口
+            result = client.advancedGeneral(image_bytes)
+            
+            logger.info(f"[BaiduAI] 图像分类原始结果: {result}")
+            
+            # 检查错误
+            if "error_code" in result:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"百度 AI 错误: {result.get('error_msg', '未知错误')} (错误码: {result.get('error_code')})"
+                )
+            
+            # 解析结果
+            items = []
+            result_list = result.get("result") or []
+            for item in result_list:
+                items.append({
+                    "name": item.get("keyword", ""),
+                    "confidence": item.get("score", 0),
+                    "root": item.get("root", ""),
+                    "baike_url": item.get("baike_info", {}).get("baike_url", ""),
+                    "description": item.get("baike_info", {}).get("description", "")
+                })
+            
+            return JSONResponse(content={
+                "success": True,
+                "task": "baidu_classify",
+                "message": f"百度 AI 图像分类完成，识别到 {len(items)} 个结果",
+                "data": {
+                    "items": items,
+                    "count": len(items),
+                    "log_id": result.get("log_id"),
+                    "source": "baidu_ai"
+                }
+            })
+            
+        elif request.api_type == "detect":
+            # 物体检测 - 使用图像主体检测
+            client = BaiduAIConfig.get_image_client()
+            
+            # 调用物体检测接口
+            result = client.objectDetect(image_bytes)
+            
+            logger.info(f"[BaiduAI] 物体检测原始结果: {result}")
+            
+            # 检查错误
+            if "error_code" in result:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"百度 AI 错误: {result.get('error_msg', '未知错误')} (错误码: {result.get('error_code')})"
+                )
+            
+            # 解析结果
+            objects = []
+            result_obj = result.get("result") or {}
+            
+            # 主体检测返回格式不同，需要处理
+            if "left" in result_obj:
+                # 单个主体检测结果
+                objects.append({
+                    "name": "主体",
+                    "confidence": 1.0,
+                    "bbox": {
+                        "x1": result_obj.get("left", 0),
+                        "y1": result_obj.get("top", 0),
+                        "x2": result_obj.get("left", 0) + result_obj.get("width", 0),
+                        "y2": result_obj.get("top", 0) + result_obj.get("height", 0)
+                    }
+                })
+            
+            return JSONResponse(content={
+                "success": True,
+                "task": "baidu_detect",
+                "message": f"百度 AI 物体检测完成，检测到 {len(objects)} 个目标",
+                "data": {
+                    "objects": objects,
+                    "count": len(objects),
+                    "log_id": result.get("log_id"),
+                    "source": "baidu_ai"
+                }
+            })
+            
+        elif request.api_type == "face":
+            # 人脸识别
+            face_client = BaiduAIConfig.get_face_client()
+            
+            # 调用人脸检测接口
+            result = face_client.detect(image_base64, "BASE64", {
+                "face_field": "age,beauty,expression,face_shape,gender,glasses,landmark,landmark150,quality,eye_status,emotion,face_type,mask,spoofing",
+                "max_face_num": 10,
+                "face_type": "LIVE",
+                "liveness_control": "NONE"
+            })
+            
+            logger.info(f"[BaiduAI] 人脸识别原始结果: {result}")
+            
+            # 检查错误
+            if result.get("error_code", 0) != 0:
+                error_msg = result.get("error_msg", "未知错误")
+                # 特殊处理：没有检测到人脸不算错误
+                if result.get("error_code") == 222202:
+                    return JSONResponse(content={
+                        "success": True,
+                        "task": "baidu_face",
+                        "message": "未检测到人脸",
+                        "data": {
+                            "faces": [],
+                            "count": 0,
+                            "source": "baidu_ai"
+                        }
+                    })
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"百度 AI 错误: {error_msg} (错误码: {result.get('error_code')})"
+                )
+            
+            # 解析人脸结果
+            faces = []
+            face_result = result.get("result") or {}
+            face_list = face_result.get("face_list") or []
+            
+            for i, face in enumerate(face_list):
+                location = face.get("location", {})
+                
+                # 表情映射
+                expression_map = {
+                    "none": "无表情",
+                    "smile": "微笑",
+                    "laugh": "大笑"
+                }
+                expression_type = face.get("expression", {}).get("type", "none")
+                
+                # 情绪映射
+                emotion_map = {
+                    "angry": "愤怒",
+                    "disgust": "厌恶",
+                    "fear": "恐惧",
+                    "happy": "高兴",
+                    "sad": "悲伤",
+                    "surprise": "惊讶",
+                    "neutral": "平静"
+                }
+                emotion_type = face.get("emotion", {}).get("type", "neutral")
+                
+                # 性别映射
+                gender_map = {
+                    "male": "男性",
+                    "female": "女性"
+                }
+                gender_type = face.get("gender", {}).get("type", "")
+                
+                faces.append({
+                    "face_id": i + 1,
+                    "age": face.get("age", 0),
+                    "beauty": face.get("beauty", 0),
+                    "gender": gender_map.get(gender_type, "未知"),
+                    "gender_confidence": face.get("gender", {}).get("probability", 0),
+                    "expression": expression_map.get(expression_type, "未知"),
+                    "expression_confidence": face.get("expression", {}).get("probability", 0),
+                    "emotion": emotion_map.get(emotion_type, "未知"),
+                    "emotion_confidence": face.get("emotion", {}).get("probability", 0),
+                    "glasses": "戴眼镜" if face.get("glasses", {}).get("type", "none") != "none" else "无眼镜",
+                    "mask": "戴口罩" if face.get("mask", {}).get("type", 0) == 1 else "无口罩",
+                    "face_shape": face.get("face_shape", {}).get("type", "未知"),
+                    "face_probability": face.get("face_probability", 0),
+                    "bbox": {
+                        "x1": location.get("left", 0),
+                        "y1": location.get("top", 0),
+                        "x2": location.get("left", 0) + location.get("width", 0),
+                        "y2": location.get("top", 0) + location.get("height", 0)
+                    },
+                    "rotation_angle": location.get("rotation", 0)
+                })
+            
+            return JSONResponse(content={
+                "success": True,
+                "task": "baidu_face",
+                "message": f"百度 AI 人脸识别完成，检测到 {len(faces)} 张人脸",
+                "data": {
+                    "faces": faces,
+                    "count": len(faces),
+                    "log_id": result.get("log_id"),
+                    "source": "baidu_ai"
+                }
+            })
+            
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的 API 类型: {request.api_type}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[BaiduAI] 错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"百度 AI API 调用失败: {str(e)}")
+
+
+@app.get("/api/baidu/status")
+async def baidu_ai_status():
+    """
+    检查百度 AI API 配置状态
+    """
+    return JSONResponse(content={
+        "success": True,
+        "data": {
+            "sdk_installed": BAIDU_AI_AVAILABLE,
+            "configured": BaiduAIConfig.is_configured(),
+            "message": "百度 AI API 已就绪" if (BAIDU_AI_AVAILABLE and BaiduAIConfig.is_configured()) else "请配置百度 AI 密钥"
+        }
+    })
+
+
 # ==================== 启动服务 ====================
 if __name__ == "__main__":
     import uvicorn
@@ -1197,6 +1480,8 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"腾讯云 SDK: {'已安装' if TENCENT_CLOUD_AVAILABLE else '未安装'}")
     print(f"腾讯云配置: {'已配置' if TencentCloudConfig.is_configured() else '未配置'}")
+    print(f"百度 AI SDK: {'已安装' if BAIDU_AI_AVAILABLE else '未安装'}")
+    print(f"百度 AI 配置: {'已配置' if BaiduAIConfig.is_configured() else '未配置'}")
     print(f"HyperLPR3 车牌识别: {'已加载' if HYPERLPR_AVAILABLE else '未安装'}")
     print("=" * 60)
     
