@@ -964,23 +964,33 @@ async def tencent_detect_objects(request: TencentCloudRequest):
             resp = client.RecognizeCar(req)
             result = json.loads(resp.to_json_string())
             
+            # 打印调试信息
+            logger.info(f"[TencentCloud] 车辆识别原始结果: {result}")
+            
             cars = []
-            if "CarCoords" in result:
-                for i, coord in enumerate(result.get("CarCoords", [])):
-                    car_info = result.get("CarTags", [])[i] if i < len(result.get("CarTags", [])) else {}
-                    cars.append({
-                        "brand": car_info.get("Brand", "未知"),
-                        "model": car_info.get("Type", "未知"),
-                        "color": car_info.get("Color", "未知"),
-                        "year": car_info.get("Year", "未知"),
-                        "confidence": car_info.get("Confidence", 0) / 100,
-                        "bbox": {
-                            "x1": coord.get("X", 0),
-                            "y1": coord.get("Y", 0),
-                            "x2": coord.get("X", 0) + coord.get("Width", 0),
-                            "y2": coord.get("Y", 0) + coord.get("Height", 0)
-                        }
-                    })
+            # 安全获取列表，处理 None 的情况
+            car_coords = result.get("CarCoords") or []
+            car_tags = result.get("CarTags") or []
+            
+            for i, coord in enumerate(car_coords):
+                # 安全获取 car_info
+                car_info = car_tags[i] if i < len(car_tags) else {}
+                if car_info is None:
+                    car_info = {}
+                    
+                cars.append({
+                    "brand": car_info.get("Brand", "未知") if car_info else "未知",
+                    "model": car_info.get("Type", "未知") if car_info else "未知",
+                    "color": car_info.get("Color", "未知") if car_info else "未知",
+                    "year": car_info.get("Year", "未知") if car_info else "未知",
+                    "confidence": (car_info.get("Confidence", 0) or 0) / 100,
+                    "bbox": {
+                        "x1": coord.get("X", 0) if coord else 0,
+                        "y1": coord.get("Y", 0) if coord else 0,
+                        "x2": (coord.get("X", 0) or 0) + (coord.get("Width", 0) or 0) if coord else 0,
+                        "y2": (coord.get("Y", 0) or 0) + (coord.get("Height", 0) or 0) if coord else 0
+                    }
+                })
             
             return JSONResponse(content={
                 "success": True,
