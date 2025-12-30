@@ -1,7 +1,10 @@
 import axios from 'axios';
 
 // API 基础配置
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// 生产环境使用相对路径，由 Nginx 代理到后端
+// 开发环境使用 localhost:8000
+const isDev = import.meta.env.DEV;
+const API_BASE_URL = import.meta.env.VITE_API_URL || (isDev ? 'http://localhost:8000' : '');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
