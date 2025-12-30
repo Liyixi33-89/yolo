@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { ArrowLeft, Send, RotateCcw, Zap, Cloud } from 'lucide-react';
 import { ImagePicker, TaskSelector, ResultDisplay, Loading } from '../components';
-import { TaskType, isTencentTask, getTaskProvider } from '../types';
+import { TaskType, isTencentTask } from '../types';
 import {
   detectObjects,
   classifyImage,
@@ -30,8 +30,7 @@ const HomePage = () => {
   const [error, setError] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
 
-  // 获取当前任务的提供商
-  const currentProvider = getTaskProvider(selectedTask);
+  // 判断是否是腾讯云任务
   const isTencent = isTencentTask(selectedTask);
 
   // 处理图片选择
