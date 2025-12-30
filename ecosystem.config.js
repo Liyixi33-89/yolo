@@ -3,8 +3,8 @@ module.exports = {
     {
       name: 'yolo-backend',
       script: 'api_server.py',
-      interpreter: './venv/bin/python',
-      cwd: '/home/username/projects/yolo',  // 修改为实际路径
+      interpreter: './venv/bin/python3.9',
+      cwd: '/var/www/yolo',
       instances: 1,
       autorestart: true,
       watch: false,
