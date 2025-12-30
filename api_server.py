@@ -17,11 +17,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import logging
+import json
+import os
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 from ultralytics import YOLO
+
+# 腾讯云 SDK
+try:
+    from tencentcloud.common import credential
+    from tencentcloud.common.profile.client_profile import ClientProfile
+    from tencentcloud.common.profile.http_profile import HttpProfile
+    from tencentcloud.tiia.v20190529 import tiia_client, models as tiia_models
+    TENCENT_CLOUD_AVAILABLE = True
+except ImportError:
+    TENCENT_CLOUD_AVAILABLE = False
+    logger.warning("腾讯云 SDK 未安装，云端 API 功能不可用")
 
 
 # ==================== FastAPI 应用初始化 ====================
@@ -72,6 +85,42 @@ class SegmentRequest(BaseModel):
     conf: float = 0.25
     iou: float = 0.45
     return_image: bool = True
+
+
+class TencentCloudRequest(BaseModel):
+    """腾讯云图像分析请求模型"""
+    image_base64: str
+    api_type: str = "detect"  # detect: 目标检测, label: 图像标签, car: 车辆识别
+
+
+# ==================== 腾讯云配置 ====================
+class TencentCloudConfig:
+    """腾讯云配置管理"""
+    # 从环境变量读取密钥（安全方式）
+    SECRET_ID = os.environ.get("TENCENT_SECRET_ID", "")
+    SECRET_KEY = os.environ.get("TENCENT_SECRET_KEY", "")
+    REGION = os.environ.get("TENCENT_REGION", "ap-guangzhou")
+    
+    @classmethod
+    def is_configured(cls) -> bool:
+        """检查是否已配置"""
+        return bool(cls.SECRET_ID and cls.SECRET_KEY)
+    
+    @classmethod
+    def get_client(cls):
+        """获取腾讯云图像分析客户端"""
+        if not TENCENT_CLOUD_AVAILABLE:
+            raise HTTPException(status_code=500, detail="腾讯云 SDK 未安装")
+        if not cls.is_configured():
+            raise HTTPException(status_code=500, detail="腾讯云密钥未配置，请设置环境变量 TENCENT_SECRET_ID 和 TENCENT_SECRET_KEY")
+        
+        cred = credential.Credential(cls.SECRET_ID, cls.SECRET_KEY)
+        httpProfile = HttpProfile()
+        httpProfile.endpoint = "tiia.tencentcloudapi.com"
+        clientProfile = ClientProfile()
+        clientProfile.httpProfile = httpProfile
+        client = tiia_client.TiiaClient(cred, cls.REGION, clientProfile)
+        return client
 
 
 # ==================== 模型管理 ====================
@@ -805,6 +854,148 @@ async def segment_image(request: SegmentRequest):
         raise HTTPException(status_code=500, detail=f"分割失败: {str(e)}")
 
 
+# ==================== 腾讯云图像分析 API ====================
+@app.post("/api/tencent/detect")
+async def tencent_detect_objects(request: TencentCloudRequest):
+    """
+    腾讯云目标检测 API
+    使用腾讯云图像分析服务进行高精度目标检测
+    
+    - image_base64: Base64 编码的图像
+    - api_type: API类型 (detect: 目标检测, label: 图像标签, car: 车辆识别)
+    """
+    try:
+        logger.info(f"[TencentCloud] 收到请求，API类型: {request.api_type}")
+        
+        client = TencentCloudConfig.get_client()
+        
+        # 处理 Base64 数据（移除可能的前缀）
+        image_base64 = request.image_base64
+        if ',' in image_base64:
+            image_base64 = image_base64.split(',')[1]
+        
+        if request.api_type == "detect":
+            # 目标检测
+            req = tiia_models.DetectLabelRequest()
+            req.ImageBase64 = image_base64
+            req.Scenes = ["CAMERA"]  # 相机场景，适合通用物体检测
+            
+            resp = client.DetectLabel(req)
+            result = json.loads(resp.to_json_string())
+            
+            # 解析标签结果
+            labels = []
+            if "Labels" in result:
+                for label in result["Labels"]:
+                    labels.append({
+                        "name": label.get("Name", ""),
+                        "name_en": label.get("FirstCategory", ""),
+                        "confidence": label.get("Confidence", 0) / 100,
+                        "category": label.get("SecondCategory", "")
+                    })
+            
+            return JSONResponse(content={
+                "success": True,
+                "task": "tencent_detect",
+                "message": f"腾讯云检测完成，识别到 {len(labels)} 个标签",
+                "data": {
+                    "labels": labels,
+                    "count": len(labels),
+                    "source": "tencent_cloud"
+                }
+            })
+            
+        elif request.api_type == "label":
+            # 图像标签（更详细的分类）
+            req = tiia_models.DetectLabelProRequest()
+            req.ImageBase64 = image_base64
+            
+            resp = client.DetectLabelPro(req)
+            result = json.loads(resp.to_json_string())
+            
+            labels = []
+            if "Labels" in result:
+                for label in result["Labels"]:
+                    labels.append({
+                        "name": label.get("Name", ""),
+                        "confidence": label.get("Confidence", 0) / 100,
+                        "first_category": label.get("FirstCategory", ""),
+                        "second_category": label.get("SecondCategory", "")
+                    })
+            
+            return JSONResponse(content={
+                "success": True,
+                "task": "tencent_label",
+                "message": f"腾讯云标签识别完成，识别到 {len(labels)} 个标签",
+                "data": {
+                    "labels": labels,
+                    "count": len(labels),
+                    "source": "tencent_cloud"
+                }
+            })
+            
+        elif request.api_type == "car":
+            # 车辆识别
+            req = tiia_models.RecognizeCarRequest()
+            req.ImageBase64 = image_base64
+            
+            resp = client.RecognizeCar(req)
+            result = json.loads(resp.to_json_string())
+            
+            cars = []
+            if "CarCoords" in result:
+                for i, coord in enumerate(result.get("CarCoords", [])):
+                    car_info = result.get("CarTags", [])[i] if i < len(result.get("CarTags", [])) else {}
+                    cars.append({
+                        "brand": car_info.get("Brand", "未知"),
+                        "model": car_info.get("Type", "未知"),
+                        "color": car_info.get("Color", "未知"),
+                        "year": car_info.get("Year", "未知"),
+                        "confidence": car_info.get("Confidence", 0) / 100,
+                        "bbox": {
+                            "x1": coord.get("X", 0),
+                            "y1": coord.get("Y", 0),
+                            "x2": coord.get("X", 0) + coord.get("Width", 0),
+                            "y2": coord.get("Y", 0) + coord.get("Height", 0)
+                        }
+                    })
+            
+            return JSONResponse(content={
+                "success": True,
+                "task": "tencent_car",
+                "message": f"腾讯云车辆识别完成，识别到 {len(cars)} 辆车",
+                "data": {
+                    "cars": cars,
+                    "count": len(cars),
+                    "source": "tencent_cloud"
+                }
+            })
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的 API 类型: {request.api_type}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[TencentCloud] 错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"腾讯云 API 调用失败: {str(e)}")
+
+
+@app.get("/api/tencent/status")
+async def tencent_cloud_status():
+    """
+    检查腾讯云 API 配置状态
+    """
+    return JSONResponse(content={
+        "success": True,
+        "data": {
+            "sdk_installed": TENCENT_CLOUD_AVAILABLE,
+            "configured": TencentCloudConfig.is_configured(),
+            "region": TencentCloudConfig.REGION,
+            "message": "腾讯云 API 已就绪" if (TENCENT_CLOUD_AVAILABLE and TencentCloudConfig.is_configured()) else "请配置腾讯云密钥"
+        }
+    })
+
+
 # ==================== 启动服务 ====================
 if __name__ == "__main__":
     import uvicorn
@@ -814,6 +1005,9 @@ if __name__ == "__main__":
     print("=" * 60)
     print("API 文档: http://localhost:8000/docs")
     print("支持 JSON 请求，无大小限制")
+    print("=" * 60)
+    print(f"腾讯云 SDK: {'已安装' if TENCENT_CLOUD_AVAILABLE else '未安装'}")
+    print(f"腾讯云配置: {'已配置' if TencentCloudConfig.is_configured() else '未配置'}")
     print("=" * 60)
     
     uvicorn.run(app, host="0.0.0.0", port=8000)
