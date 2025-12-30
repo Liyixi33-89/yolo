@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+ENV/
+env/
+.venv/
+
+# YOLO 模型文件
+*.pt
+*.onnx
+*.engine
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+logs/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+
+# 上传文件
+uploads/
+output/
+results/

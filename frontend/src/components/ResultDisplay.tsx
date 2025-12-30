@@ -1,0 +1,351 @@
+import { TaskType, getTaskConfig } from '../types';
+import {
+  DetectionData,
+  ClassificationData,
+  PoseData,
+  SegmentData,
+  SceneAnalysis,
+  DetectedObject,
+} from '../services/api';
+
+interface ResultDisplayProps {
+  task: TaskType;
+  data: DetectionData | ClassificationData | PoseData | SegmentData | null;
+  annotatedImage?: string | null;
+}
+
+const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
+  const taskConfig = getTaskConfig(task);
+
+  if (!data) return null;
+
+  // 渲染检测结果
+  const renderDetectionResults = (detectionData: DetectionData) => {
+    const { detections, count } = detectionData;
+    
+    // 按类别分组统计
+    const classCount: Record<string, number> = {};
+    detections.forEach((d) => {
+      classCount[d.class_name] = (classCount[d.class_name] || 0) + 1;
+    });
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-blue-50 p-3">
+          <span className="text-sm text-blue-700">检测到目标</span>
+          <span className="text-lg font-bold text-blue-700">{count} 个</span>
+        </div>
+        
+        {Object.entries(classCount).length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <h4 className="mb-2 text-sm font-medium text-gray-700">类别统计</h4>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(classCount).map(([className, cnt]) => (
+                <span
+                  key={className}
+                  className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
+                >
+                  {className}
+                  <span className="rounded-full bg-primary-500 px-1.5 text-white">
+                    {cnt}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {detections.length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white">
+            <h4 className="border-b border-gray-200 p-3 text-sm font-medium text-gray-700">
+              检测详情
+            </h4>
+            <div className="max-h-48 overflow-y-auto">
+              {detections.map((detection, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between border-b border-gray-100 p-3 last:border-b-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-xs font-medium text-primary-700">
+                      {index + 1}
+                    </span>
+                    <span className="font-medium text-gray-800">
+                      {detection.class_name}
+                    </span>
+                  </div>
+                  <span className="rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                    {(detection.confidence * 100).toFixed(1)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 渲染分类结果
+  const renderClassificationResults = (classData: ClassificationData) => {
+    const { classifications, scene_analysis, detected_objects } = classData;
+    const topResult = classifications[0];
+
+    return (
+      <div className="space-y-4">
+        {/* 场景分析结果 - 主要场景 */}
+        {scene_analysis && (
+          <div className="rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 p-4 text-white shadow-lg">
+            <div className="flex items-center gap-3">
+              <span className="text-4xl">{scene_analysis.primary_scene.icon}</span>
+              <div>
+                <p className="text-sm opacity-90">图像场景识别</p>
+                <p className="text-2xl font-bold">{scene_analysis.primary_scene.name}</p>
+                <p className="text-sm opacity-75">{scene_analysis.primary_scene.description}</p>
+              </div>
+            </div>
+            
+            {/* 图像特征标签 */}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {scene_analysis.image_features.is_anime_style && (
+                <span className="rounded-full bg-white/20 px-3 py-1 text-xs">
+                  🎨 动漫/卡通风格
+                </span>
+              )}
+              <span className="rounded-full bg-white/20 px-3 py-1 text-xs">
+                🌈 饱和度: {Math.round(scene_analysis.image_features.saturation * 100)}%
+              </span>
+              <span className="rounded-full bg-white/20 px-3 py-1 text-xs">
+                ☀️ 亮度: {Math.round(scene_analysis.image_features.brightness * 100)}%
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* 场景分布 */}
+        {scene_analysis && scene_analysis.scene_distribution.length > 1 && (
+          <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <h4 className="mb-3 text-sm font-medium text-gray-700">🔍 场景可能性分布</h4>
+            <div className="space-y-2">
+              {scene_analysis.scene_distribution.slice(0, 4).map((scene, index) => (
+                <div key={index} className="relative">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2 text-gray-700">
+                      <span>{scene.icon}</span>
+                      <span>{scene.name}</span>
+                    </span>
+                    <span className="text-gray-500">
+                      {(scene.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        index === 0 ? 'bg-purple-500' : 'bg-purple-300'
+                      }`}
+                      style={{ width: `${Math.min(scene.confidence * 100, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 检测到的物体 */}
+        {detected_objects && detected_objects.length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <h4 className="mb-2 text-sm font-medium text-gray-700">🎯 检测到的物体</h4>
+            <div className="flex flex-wrap gap-2">
+              {detected_objects.slice(0, 8).map((obj, index) => (
+                <span
+                  key={index}
+                  className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                >
+                  {obj.class_name}
+                  <span className="rounded-full bg-blue-200 px-1.5 text-blue-800">
+                    {(obj.confidence * 100).toFixed(0)}%
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 原始分类结果 */}
+        {topResult && (
+          <div className="rounded-lg bg-green-50 p-4">
+            <p className="text-sm text-green-600">ImageNet 分类</p>
+            <div className="mt-2 flex items-center justify-between">
+              <div>
+                <p className="text-lg font-bold text-green-700">
+                  {(topResult as any).class_name_cn || topResult.class_name}
+                </p>
+                <p className="text-xs text-green-500">{topResult.class_name}</p>
+              </div>
+              <span className="rounded-full bg-green-200 px-3 py-1 text-sm font-medium text-green-800">
+                {(topResult.confidence * 100).toFixed(1)}%
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* 其他分类可能 */}
+        {classifications.length > 1 && (
+          <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <h4 className="mb-3 text-sm font-medium text-gray-700">📊 其他分类结果</h4>
+            <div className="space-y-2">
+              {classifications.slice(1, 5).map((item, index) => (
+                <div key={index} className="relative">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">
+                      {(item as any).class_name_cn || item.class_name}
+                      <span className="ml-1 text-xs text-gray-400">({item.class_name})</span>
+                    </span>
+                    <span className="text-gray-500">
+                      {(item.confidence * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full rounded-full bg-green-400 transition-all"
+                      style={{ width: `${item.confidence * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 渲染姿态估计结果
+  const renderPoseResults = (poseData: PoseData) => {
+    const { poses, count } = poseData;
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-purple-50 p-3">
+          <span className="text-sm text-purple-700">检测到人物</span>
+          <span className="text-lg font-bold text-purple-700">{count} 人</span>
+        </div>
+
+        {poses.map((pose) => {
+          const visibleKeypoints = pose.keypoints.filter(
+            (k) => k.confidence > 0.5
+          ).length;
+          return (
+            <div
+              key={pose.person_id}
+              className="rounded-lg border border-gray-200 bg-white p-3"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-100 text-sm font-medium text-purple-700">
+                    👤
+                  </span>
+                  <span className="font-medium text-gray-800">
+                    人物 {pose.person_id + 1}
+                  </span>
+                </div>
+                <span className="text-sm text-gray-500">
+                  {visibleKeypoints}/17 关键点
+                </span>
+              </div>
+              
+              {/* 关键点可视化 */}
+              <div className="mt-3 grid grid-cols-4 gap-1">
+                {pose.keypoints.map((kp, idx) => (
+                  <div
+                    key={idx}
+                    className={`rounded p-1 text-center text-xs ${
+                      kp.confidence > 0.5
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-100 text-gray-400'
+                    }`}
+                    title={`${kp.name}: ${(kp.confidence * 100).toFixed(0)}%`}
+                  >
+                    {kp.name.replace('left_', 'L ').replace('right_', 'R ')}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // 渲染分割结果
+  const renderSegmentResults = (segmentData: SegmentData) => {
+    const { segments, count } = segmentData;
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-orange-50 p-3">
+          <span className="text-sm text-orange-700">分割目标</span>
+          <span className="text-lg font-bold text-orange-700">{count} 个</span>
+        </div>
+
+        {segments.length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white">
+            <h4 className="border-b border-gray-200 p-3 text-sm font-medium text-gray-700">
+              分割详情
+            </h4>
+            <div className="max-h-48 overflow-y-auto">
+              {segments.map((segment, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between border-b border-gray-100 p-3 last:border-b-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-100 text-xs font-medium text-orange-700">
+                      {index + 1}
+                    </span>
+                    <span className="font-medium text-gray-800">
+                      {segment.class_name}
+                    </span>
+                  </div>
+                  <span className="rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                    {(segment.confidence * 100).toFixed(1)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="w-full space-y-4">
+      {/* 标注图像 */}
+      {annotatedImage && (
+        <div className="image-container">
+          <img
+            src={`data:image/jpeg;base64,${annotatedImage}`}
+            alt="识别结果"
+            className="w-full"
+          />
+        </div>
+      )}
+
+      {/* 任务标签 */}
+      <div className="flex items-center gap-2">
+        <span className="text-xl">{taskConfig?.icon}</span>
+        <span className="font-medium text-gray-800">{taskConfig?.name}</span>
+      </div>
+
+      {/* 结果详情 */}
+      {task === 'detect' && renderDetectionResults(data as DetectionData)}
+      {task === 'classify' && renderClassificationResults(data as ClassificationData)}
+      {task === 'pose' && renderPoseResults(data as PoseData)}
+      {task === 'segment' && renderSegmentResults(data as SegmentData)}
+    </div>
+  );
+};
+
+export default ResultDisplay;

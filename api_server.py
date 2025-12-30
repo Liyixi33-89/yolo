@@ -1,0 +1,819 @@
+"""
+YOLO11 后端 API 服务
+使用 FastAPI 提供 RESTful API 接口
+"""
+
+import io
+import base64
+import uuid
+from pathlib import Path
+from typing import Optional, List
+
+import cv2
+import numpy as np
+from PIL import Image
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Body, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
+import logging
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+from ultralytics import YOLO
+
+
+# ==================== FastAPI 应用初始化 ====================
+app = FastAPI(
+    title="YOLO11 视觉识别 API",
+    description="提供图像分类、目标检测、目标跟踪、姿态估计等功能",
+    version="1.0.0"
+)
+
+# 配置 CORS（允许移动端跨域访问）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ==================== 请求体模型（用于 JSON 请求） ====================
+class DetectRequest(BaseModel):
+    """目标检测请求模型"""
+    image_base64: str
+    conf: float = 0.25
+    iou: float = 0.45
+    return_image: bool = True
+
+
+class ClassifyRequest(BaseModel):
+    """图像分类请求模型"""
+    image_base64: str
+    conf: float = 0.25
+    top_k: int = 5
+    analyze_scene: bool = True  # 是否分析场景类型
+
+
+class PoseRequest(BaseModel):
+    """姿态估计请求模型"""
+    image_base64: str
+    conf: float = 0.25
+    iou: float = 0.45
+    return_image: bool = True
+
+
+class SegmentRequest(BaseModel):
+    """实例分割请求模型"""
+    image_base64: str
+    conf: float = 0.25
+    iou: float = 0.45
+    return_image: bool = True
+
+
+# ==================== 模型管理 ====================
+class ModelManager:
+    """模型管理器（单例模式）"""
+    _instance = None
+    _models = {}
+    
+    MODEL_PATHS = {
+        'detect': 'yolo11n.pt',
+        'classify': 'yolo11n-cls.pt',
+        'pose': 'yolo11n-pose.pt',
+        'segment': 'yolo11n-seg.pt',
+    }
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def get_model(self, task: str) -> YOLO:
+        """获取指定任务的模型"""
+        if task not in self._models:
+            model_path = self.MODEL_PATHS.get(task)
+            if model_path is None:
+                raise ValueError(f"不支持的任务类型: {task}")
+            print(f"正在加载模型: {model_path}")
+            self._models[task] = YOLO(model_path)
+        return self._models[task]
+
+
+model_manager = ModelManager()
+
+
+# ==================== 场景分类映射 ====================
+class SceneAnalyzer:
+    """场景分析器：将低级分类映射到高级场景类别"""
+    
+    # 场景类型定义
+    SCENE_TYPES = {
+        "portrait": {
+            "name": "人物照片",
+            "icon": "👤",
+            "description": "包含人物的照片",
+            "keywords": ["person", "face", "portrait", "people", "human", "man", "woman", "child", "baby"]
+        },
+        "animal": {
+            "name": "动物",
+            "icon": "🐾",
+            "description": "动物照片",
+            "keywords": ["dog", "cat", "bird", "fish", "horse", "elephant", "bear", "zebra", "giraffe", "cow", "sheep", "tiger", "lion", "monkey", "rabbit", "hamster", "pet"]
+        },
+        "cityscape": {
+            "name": "城市风景",
+            "icon": "🏙️",
+            "description": "城市建筑和街景",
+            "keywords": ["skyscraper", "building", "tower", "bridge", "street", "road", "traffic", "car", "bus", "train", "architecture", "city", "urban", "downtown", "office"]
+        },
+        "nature": {
+            "name": "自然风景",
+            "icon": "🏞️",
+            "description": "自然风光和户外场景",
+            "keywords": ["mountain", "lake", "river", "ocean", "sea", "beach", "forest", "tree", "flower", "garden", "sky", "cloud", "sunset", "sunrise", "landscape", "grass", "field", "valley"]
+        },
+        "food": {
+            "name": "美食",
+            "icon": "🍽️",
+            "description": "食物和饮品",
+            "keywords": ["food", "pizza", "burger", "cake", "fruit", "vegetable", "bread", "coffee", "drink", "meal", "dinner", "breakfast", "lunch", "restaurant", "dish", "cuisine"]
+        },
+        "vehicle": {
+            "name": "交通工具",
+            "icon": "🚗",
+            "description": "车辆和交通工具",
+            "keywords": ["car", "truck", "bus", "motorcycle", "bicycle", "airplane", "boat", "ship", "train", "vehicle", "automobile", "van"]
+        },
+        "indoor": {
+            "name": "室内场景",
+            "icon": "🏠",
+            "description": "室内环境和家居",
+            "keywords": ["room", "furniture", "sofa", "chair", "table", "bed", "lamp", "desk", "kitchen", "bathroom", "bedroom", "living", "office", "interior"]
+        },
+        "sports": {
+            "name": "运动",
+            "icon": "⚽",
+            "description": "体育运动相关",
+            "keywords": ["ball", "football", "basketball", "tennis", "golf", "baseball", "soccer", "swimming", "running", "sport", "gym", "stadium", "athlete"]
+        },
+        "electronics": {
+            "name": "电子设备",
+            "icon": "📱",
+            "description": "电子产品和设备",
+            "keywords": ["phone", "computer", "laptop", "keyboard", "mouse", "screen", "monitor", "television", "camera", "electronic", "device", "gadget"]
+        },
+        "art": {
+            "name": "艺术/动漫",
+            "icon": "🎨",
+            "description": "艺术作品、插画或动漫风格",
+            "keywords": ["painting", "art", "drawing", "illustration", "cartoon", "comic", "animation", "poster", "design", "graphic"]
+        },
+        "text": {
+            "name": "文本/文档",
+            "icon": "📄",
+            "description": "包含文字的图片",
+            "keywords": ["document", "paper", "book", "newspaper", "magazine", "text", "letter", "sign", "poster", "menu", "envelope", "notebook"]
+        },
+        "unknown": {
+            "name": "其他",
+            "icon": "❓",
+            "description": "无法确定的场景类型",
+            "keywords": []
+        }
+    }
+    
+    # 图像特征分析阈值
+    COLOR_THRESHOLDS = {
+        "anime_saturation": 0.6,  # 动漫通常色彩饱和度高
+        "anime_edge_ratio": 0.15,  # 动漫边缘清晰
+    }
+    
+    @classmethod
+    def analyze_image_features(cls, image: np.ndarray) -> dict:
+        """分析图像特征"""
+        features = {}
+        
+        # 转换到HSV颜色空间
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        
+        # 计算饱和度均值（动漫图片通常饱和度较高）
+        saturation = hsv[:, :, 1].mean() / 255.0
+        features["saturation"] = saturation
+        
+        # 计算颜色丰富度（通过直方图）
+        hist_h = cv2.calcHist([hsv], [0], None, [180], [0, 180])
+        hist_h = hist_h / hist_h.sum()  # 归一化
+        color_variety = (hist_h > 0.01).sum() / 180.0
+        features["color_variety"] = float(color_variety)
+        
+        # 边缘检测（动漫图片边缘通常更清晰）
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 100, 200)
+        edge_ratio = edges.mean() / 255.0
+        features["edge_ratio"] = edge_ratio
+        
+        # 颜色数量（动漫图片颜色数量相对较少但边界清晰）
+        # 简化颜色
+        small = cv2.resize(image, (64, 64))
+        small = (small // 32) * 32  # 量化颜色
+        unique_colors = len(np.unique(small.reshape(-1, 3), axis=0))
+        features["unique_colors"] = unique_colors
+        
+        # 判断是否可能是动漫/卡通风格
+        is_anime_style = (
+            saturation > cls.COLOR_THRESHOLDS["anime_saturation"] and
+            edge_ratio > cls.COLOR_THRESHOLDS["anime_edge_ratio"] and
+            unique_colors < 500  # 动漫通常颜色数量有限
+        )
+        features["is_anime_style"] = bool(is_anime_style)  # 转换为 Python 原生 bool
+        
+        # 计算亮度（用于判断室内外）
+        brightness = hsv[:, :, 2].mean() / 255.0
+        features["brightness"] = float(brightness)  # 转换为 Python 原生 float
+        features["saturation"] = float(saturation)  # 确保是 Python 原生 float
+        features["edge_ratio"] = float(edge_ratio)  # 确保是 Python 原生 float
+        
+        return features
+    
+    @classmethod
+    def classify_scene(cls, classifications: list, image_features: dict = None, detected_objects: list = None) -> dict:
+        """根据分类结果推断场景类型"""
+        
+        scene_scores = {scene: 0.0 for scene in cls.SCENE_TYPES.keys()}
+        matched_keywords = []
+        
+        # 分析分类结果
+        for item in classifications:
+            class_name = item["class_name"].lower()
+            confidence = item["confidence"]
+            
+            for scene_type, scene_info in cls.SCENE_TYPES.items():
+                for keyword in scene_info["keywords"]:
+                    if keyword in class_name or class_name in keyword:
+                        scene_scores[scene_type] += confidence
+                        matched_keywords.append({
+                            "keyword": keyword,
+                            "class": class_name,
+                            "scene": scene_type,
+                            "confidence": confidence
+                        })
+        
+        # 分析检测到的对象（如果有）
+        if detected_objects:
+            for obj in detected_objects:
+                obj_name = obj["class_name"].lower()
+                obj_conf = obj["confidence"]
+                
+                # 人物检测权重更高
+                if obj_name == "person":
+                    scene_scores["portrait"] += obj_conf * 1.5
+                
+                for scene_type, scene_info in cls.SCENE_TYPES.items():
+                    for keyword in scene_info["keywords"]:
+                        if keyword in obj_name:
+                            scene_scores[scene_type] += obj_conf * 0.8
+        
+        # 图像特征分析加成
+        if image_features:
+            # 动漫/卡通风格检测
+            if image_features.get("is_anime_style", False):
+                scene_scores["art"] += 0.5
+            
+            # 高饱和度可能是食物或艺术
+            if image_features.get("saturation", 0) > 0.5:
+                scene_scores["food"] += 0.1
+                scene_scores["art"] += 0.1
+        
+        # 找出得分最高的场景
+        best_scene = max(scene_scores, key=scene_scores.get)
+        best_score = scene_scores[best_scene]
+        
+        # 如果最高分太低，标记为未知
+        if best_score < 0.1:
+            best_scene = "unknown"
+        
+        scene_info = cls.SCENE_TYPES[best_scene]
+        
+        # 计算所有场景的置信度分布
+        total_score = sum(scene_scores.values()) + 0.001  # 避免除零
+        scene_distribution = [
+            {
+                "type": scene,
+                "name": cls.SCENE_TYPES[scene]["name"],
+                "icon": cls.SCENE_TYPES[scene]["icon"],
+                "confidence": score / total_score
+            }
+            for scene, score in sorted(scene_scores.items(), key=lambda x: -x[1])
+            if score > 0
+        ][:5]  # 只返回前5个
+        
+        return {
+            "primary_scene": {
+                "type": best_scene,
+                "name": scene_info["name"],
+                "icon": scene_info["icon"],
+                "description": scene_info["description"],
+                "confidence": min(best_score, 1.0)
+            },
+            "scene_distribution": scene_distribution,
+            "matched_keywords": matched_keywords[:10],  # 最多返回10个匹配关键词
+            "image_features": {
+                "is_anime_style": bool(image_features.get("is_anime_style", False)) if image_features else False,
+                "saturation": float(round(image_features.get("saturation", 0), 2)) if image_features else 0.0,
+                "brightness": float(round(image_features.get("brightness", 0), 2)) if image_features else 0.0,
+            }
+        }
+
+
+scene_analyzer = SceneAnalyzer()
+
+
+# ==================== 响应模型 ====================
+class BBox(BaseModel):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+class DetectionResult(BaseModel):
+    class_id: int
+    class_name: str
+    confidence: float
+    bbox: BBox
+
+
+class ClassificationResult(BaseModel):
+    class_id: int
+    class_name: str
+    confidence: float
+
+
+class Keypoint(BaseModel):
+    name: str
+    x: float
+    y: float
+    confidence: float
+
+
+class PoseResult(BaseModel):
+    person_id: int
+    bbox: Optional[BBox]
+    keypoints: List[Keypoint]
+
+
+class APIResponse(BaseModel):
+    success: bool
+    task: str
+    message: str
+    data: Optional[dict] = None
+
+
+# ==================== 工具函数 ====================
+def read_image_from_upload(file: UploadFile) -> np.ndarray:
+    """从上传文件读取图像"""
+    contents = file.file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if image is None:
+        raise HTTPException(status_code=400, detail="无法解析图像文件")
+    return image
+
+
+def read_image_from_base64(base64_str: str) -> np.ndarray:
+    """从 Base64 字符串读取图像"""
+    try:
+        if not base64_str or len(base64_str) < 100:
+            raise HTTPException(status_code=400, detail=f"Base64 数据太短或为空，长度: {len(base64_str) if base64_str else 0}")
+        
+        logger.info(f"接收到 Base64 数据，长度: {len(base64_str)}")
+        
+        # 移除可能的 data URL 前缀
+        if ',' in base64_str:
+            base64_str = base64_str.split(',')[1]
+        
+        # 移除可能的空白字符
+        base64_str = base64_str.strip()
+        
+        image_bytes = base64.b64decode(base64_str)
+        logger.info(f"解码后图像字节数: {len(image_bytes)}")
+        
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if image is None:
+            raise HTTPException(status_code=400, detail="无法解析 Base64 图像，可能是格式不支持")
+        
+        logger.info(f"图像尺寸: {image.shape}")
+        return image
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Base64 解码失败: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Base64 解码失败: {str(e)}")
+
+
+def encode_image_to_base64(image: np.ndarray, format: str = 'jpg') -> str:
+    """将图像编码为 Base64"""
+    if format == 'jpg':
+        _, buffer = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    else:
+        _, buffer = cv2.imencode('.png', image)
+    return base64.b64encode(buffer).decode('utf-8')
+
+
+# ==================== API 路由 ====================
+
+@app.get("/")
+async def root():
+    """API 根路由"""
+    return {
+        "name": "YOLO11 视觉识别 API",
+        "version": "1.0.0",
+        "endpoints": {
+            "detect": "/api/detect",
+            "classify": "/api/classify",
+            "pose": "/api/pose",
+            "segment": "/api/segment"
+        }
+    }
+
+
+@app.get("/api/health")
+async def health_check():
+    """健康检查"""
+    return {"status": "healthy", "message": "服务运行正常"}
+
+
+# ==================== 目标检测 API ====================
+@app.post("/api/detect")
+async def detect_objects(request: DetectRequest):
+    """
+    目标检测 API（JSON 请求）
+    
+    - image_base64: Base64 编码的图像
+    - conf: 置信度阈值
+    - iou: IoU 阈值
+    - return_image: 是否返回标注后的图像
+    """
+    try:
+        logger.info(f"[Detect] 收到 JSON 请求，数据长度: {len(request.image_base64)}")
+        
+        # 读取图像
+        image = read_image_from_base64(request.image_base64)
+        
+        # 执行检测
+        model = model_manager.get_model('detect')
+        results = model(image, conf=request.conf, iou=request.iou)
+        
+        # 解析结果
+        detections = []
+        for result in results:
+            boxes = result.boxes
+            if boxes is not None:
+                for box in boxes:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                    detections.append({
+                        "class_id": int(box.cls[0]),
+                        "class_name": result.names[int(box.cls[0])],
+                        "confidence": float(box.conf[0]),
+                        "bbox": {
+                            "x1": float(x1),
+                            "y1": float(y1),
+                            "x2": float(x2),
+                            "y2": float(y2)
+                        }
+                    })
+        
+        response_data = {
+            "success": True,
+            "task": "detection",
+            "message": f"检测到 {len(detections)} 个目标",
+            "data": {
+                "detections": detections,
+                "count": len(detections)
+            }
+        }
+        
+        # 返回标注图像
+        if request.return_image:
+            annotated = results[0].plot()
+            response_data["data"]["annotated_image"] = encode_image_to_base64(annotated)
+        
+        return JSONResponse(content=response_data)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Detect] 错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"检测失败: {str(e)}")
+
+
+# ==================== 图像分类 API ====================
+@app.post("/api/classify")
+async def classify_image(request: ClassifyRequest):
+    """
+    图像分类 API（JSON 请求）- 增强版，支持场景分析
+    
+    - image_base64: Base64 编码的图像
+    - conf: 置信度阈值
+    - top_k: 返回前 k 个分类结果
+    - analyze_scene: 是否分析场景类型（默认开启）
+    """
+    try:
+        logger.info(f"[Classify] 收到 JSON 请求，场景分析: {request.analyze_scene}")
+        
+        # 读取图像
+        image = read_image_from_base64(request.image_base64)
+        
+        # 执行分类
+        model = model_manager.get_model('classify')
+        results = model(image, conf=request.conf)
+        
+        # 解析分类结果
+        classifications = []
+        for result in results:
+            probs = result.probs
+            if probs is not None:
+                top_indices = probs.top5[:request.top_k] if hasattr(probs, 'top5') else []
+                top_confs = probs.top5conf[:request.top_k] if hasattr(probs, 'top5conf') else []
+                
+                for idx, conf_score in zip(top_indices, top_confs):
+                    # 添加中文翻译
+                    class_name_en = result.names[idx]
+                    class_name_cn = translate_class_name(class_name_en)
+                    
+                    classifications.append({
+                        "class_id": int(idx),
+                        "class_name": class_name_en,
+                        "class_name_cn": class_name_cn,
+                        "confidence": float(conf_score)
+                    })
+        
+        response_data = {
+            "success": True,
+            "task": "classification",
+            "message": f"分类完成，Top-{len(classifications)} 结果",
+            "data": {
+                "classifications": classifications
+            }
+        }
+        
+        # 场景分析
+        if request.analyze_scene:
+            # 分析图像特征
+            image_features = scene_analyzer.analyze_image_features(image)
+            
+            # 尝试获取目标检测结果以辅助场景判断
+            detected_objects = []
+            try:
+                detect_model = model_manager.get_model('detect')
+                detect_results = detect_model(image, conf=0.3)
+                for det_result in detect_results:
+                    if det_result.boxes is not None:
+                        for box in det_result.boxes:
+                            detected_objects.append({
+                                "class_name": det_result.names[int(box.cls[0])],
+                                "confidence": float(box.conf[0])
+                            })
+            except Exception as e:
+                logger.warning(f"目标检测辅助分析失败: {e}")
+            
+            # 进行场景分析
+            scene_analysis = scene_analyzer.classify_scene(
+                classifications, 
+                image_features, 
+                detected_objects
+            )
+            
+            response_data["data"]["scene_analysis"] = scene_analysis
+            response_data["data"]["detected_objects"] = detected_objects[:10]  # 最多返回10个检测对象
+            response_data["message"] = f"分类完成：{scene_analysis['primary_scene']['name']}"
+        
+        return JSONResponse(content=response_data)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Classify] 错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"分类失败: {str(e)}")
+
+
+# ==================== 常用类别中文翻译 ====================
+CLASS_NAME_TRANSLATIONS = {
+    # 人物相关
+    "person": "人物", "man": "男人", "woman": "女人", "child": "儿童", "baby": "婴儿",
+    # 动物
+    "dog": "狗", "cat": "猫", "bird": "鸟", "horse": "马", "sheep": "羊", "cow": "牛",
+    "elephant": "大象", "bear": "熊", "zebra": "斑马", "giraffe": "长颈鹿", "tiger": "老虎",
+    "lion": "狮子", "fish": "鱼", "rabbit": "兔子", "monkey": "猴子",
+    # 交通工具
+    "car": "汽车", "truck": "卡车", "bus": "公交车", "motorcycle": "摩托车", "bicycle": "自行车",
+    "airplane": "飞机", "boat": "船", "train": "火车", "ship": "轮船",
+    # 建筑和城市
+    "building": "建筑", "house": "房屋", "skyscraper": "摩天大楼", "bridge": "桥",
+    "tower": "塔", "church": "教堂", "castle": "城堡", "palace": "宫殿",
+    # 自然
+    "mountain": "山", "lake": "湖", "river": "河流", "ocean": "海洋", "beach": "海滩",
+    "forest": "森林", "tree": "树", "flower": "花", "grass": "草地", "sky": "天空",
+    # 食物
+    "food": "食物", "pizza": "披萨", "burger": "汉堡", "cake": "蛋糕", "fruit": "水果",
+    "apple": "苹果", "banana": "香蕉", "orange": "橙子", "bread": "面包",
+    # 电子设备
+    "phone": "手机", "computer": "电脑", "laptop": "笔记本", "television": "电视", "camera": "相机",
+    # 其他
+    "book": "书", "chair": "椅子", "table": "桌子", "bed": "床", "sofa": "沙发",
+    "lamp": "灯", "clock": "时钟", "ball": "球", "toy": "玩具",
+}
+
+
+def translate_class_name(english_name: str) -> str:
+    """将英文类名翻译为中文"""
+    name_lower = english_name.lower().replace("_", " ")
+    
+    # 直接匹配
+    if name_lower in CLASS_NAME_TRANSLATIONS:
+        return CLASS_NAME_TRANSLATIONS[name_lower]
+    
+    # 部分匹配
+    for en, cn in CLASS_NAME_TRANSLATIONS.items():
+        if en in name_lower or name_lower in en:
+            return cn
+    
+    return english_name  # 无法翻译则返回原名
+
+
+# ==================== 姿态估计 API ====================
+@app.post("/api/pose")
+async def estimate_pose(request: PoseRequest):
+    """
+    姿态估计 API（JSON 请求）
+    
+    - image_base64: Base64 编码的图像
+    - conf: 置信度阈值
+    - iou: IoU 阈值
+    - return_image: 是否返回标注后的图像
+    """
+    try:
+        logger.info(f"[Pose] 收到 JSON 请求")
+        
+        # 读取图像
+        image = read_image_from_base64(request.image_base64)
+        
+        # 执行姿态估计
+        model = model_manager.get_model('pose')
+        results = model(image, conf=request.conf, iou=request.iou)
+        
+        # 关键点名称
+        keypoint_names = [
+            'nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear',
+            'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow',
+            'left_wrist', 'right_wrist', 'left_hip', 'right_hip',
+            'left_knee', 'right_knee', 'left_ankle', 'right_ankle'
+        ]
+        
+        # 解析结果
+        poses = []
+        for result in results:
+            if result.keypoints is not None:
+                keypoints_data = result.keypoints
+                boxes = result.boxes
+                
+                for i in range(len(keypoints_data)):
+                    kpts = keypoints_data[i].xy[0].cpu().numpy()
+                    kpts_conf = keypoints_data[i].conf[0].cpu().numpy() if keypoints_data[i].conf is not None else None
+                    
+                    # 获取边界框
+                    bbox = None
+                    if boxes is not None and i < len(boxes):
+                        x1, y1, x2, y2 = boxes[i].xyxy[0].cpu().numpy()
+                        bbox = {
+                            "x1": float(x1),
+                            "y1": float(y1),
+                            "x2": float(x2),
+                            "y2": float(y2)
+                        }
+                    
+                    # 构建关键点信息
+                    keypoints = []
+                    for j, name in enumerate(keypoint_names):
+                        if j < len(kpts):
+                            keypoints.append({
+                                "name": name,
+                                "x": float(kpts[j][0]),
+                                "y": float(kpts[j][1]),
+                                "confidence": float(kpts_conf[j]) if kpts_conf is not None else 0.0
+                            })
+                    
+                    poses.append({
+                        "person_id": i,
+                        "bbox": bbox,
+                        "keypoints": keypoints
+                    })
+        
+        response_data = {
+            "success": True,
+            "task": "pose_estimation",
+            "message": f"检测到 {len(poses)} 人",
+            "data": {
+                "poses": poses,
+                "count": len(poses)
+            }
+        }
+        
+        # 返回标注图像
+        if request.return_image:
+            annotated = results[0].plot()
+            response_data["data"]["annotated_image"] = encode_image_to_base64(annotated)
+        
+        return JSONResponse(content=response_data)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Pose] 错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"姿态估计失败: {str(e)}")
+
+
+# ==================== 实例分割 API ====================
+@app.post("/api/segment")
+async def segment_image(request: SegmentRequest):
+    """
+    实例分割 API（JSON 请求）
+    
+    - image_base64: Base64 编码的图像
+    - conf: 置信度阈值
+    - iou: IoU 阈值
+    - return_image: 是否返回标注后的图像
+    """
+    try:
+        logger.info(f"[Segment] 收到 JSON 请求")
+        
+        # 读取图像
+        image = read_image_from_base64(request.image_base64)
+        
+        # 执行分割
+        model = model_manager.get_model('segment')
+        results = model(image, conf=request.conf, iou=request.iou)
+        
+        # 解析结果
+        segments = []
+        for result in results:
+            boxes = result.boxes
+            masks = result.masks
+            
+            if boxes is not None:
+                for i, box in enumerate(boxes):
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                    segment_data = {
+                        "class_id": int(box.cls[0]),
+                        "class_name": result.names[int(box.cls[0])],
+                        "confidence": float(box.conf[0]),
+                        "bbox": {
+                            "x1": float(x1),
+                            "y1": float(y1),
+                            "x2": float(x2),
+                            "y2": float(y2)
+                        }
+                    }
+                    segments.append(segment_data)
+        
+        response_data = {
+            "success": True,
+            "task": "segmentation",
+            "message": f"分割到 {len(segments)} 个目标",
+            "data": {
+                "segments": segments,
+                "count": len(segments)
+            }
+        }
+        
+        # 返回标注图像
+        if request.return_image:
+            annotated = results[0].plot()
+            response_data["data"]["annotated_image"] = encode_image_to_base64(annotated)
+        
+        return JSONResponse(content=response_data)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Segment] 错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"分割失败: {str(e)}")
+
+
+# ==================== 启动服务 ====================
+if __name__ == "__main__":
+    import uvicorn
+    
+    print("=" * 60)
+    print("YOLO11 视觉识别 API 服务")
+    print("=" * 60)
+    print("API 文档: http://localhost:8000/docs")
+    print("支持 JSON 请求，无大小限制")
+    print("=" * 60)
+    
+    uvicorn.run(app, host="0.0.0.0", port=8000)
