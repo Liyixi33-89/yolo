@@ -35,8 +35,11 @@ echo -e "${YELLOW}⚛️ 步骤 3/5: 构建前端...${NC}"
 cd frontend
 npm install --silent
 npm run build
+# 构建完成后删除 node_modules 以节省磁盘空间
+echo -e "${YELLOW}🧹 清理前端依赖...${NC}"
+rm -rf node_modules
 cd ..
-echo -e "${GREEN}✓ 前端构建完成${NC}"
+echo -e "${GREEN}✓ 前端构建完成，已清理 node_modules${NC}"
 
 echo -e "${YELLOW}🔄 步骤 4/5: 重启后端服务...${NC}"
 pm2 restart yolo-backend || pm2 start ecosystem.config.js
