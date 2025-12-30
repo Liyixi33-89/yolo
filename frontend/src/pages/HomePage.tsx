@@ -7,6 +7,7 @@ import {
   classifyImage,
   estimatePose,
   segmentImage,
+  recognizeLicensePlate,
   tencentDetect,
   tencentLabel,
   tencentCarRecognize,
@@ -14,12 +15,13 @@ import {
   ClassificationData,
   PoseData,
   SegmentData,
+  LPRData,
   TencentDetectionData,
   TencentLabelData,
   TencentCarData,
 } from '../services/api';
 
-type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | TencentDetectionData | TencentLabelData | TencentCarData | null;
+type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | null;
 
 const HomePage = () => {
   const [selectedTask, setSelectedTask] = useState<TaskType>('detect');
@@ -87,6 +89,12 @@ const HomePage = () => {
 
         case 'segment':
           response = await segmentImage(imageBase64, 0.25, true);
+          setResult(response.data);
+          setAnnotatedImage(response.data.annotated_image || null);
+          break;
+
+        case 'lpr':
+          response = await recognizeLicensePlate(imageBase64, true);
           setResult(response.data);
           setAnnotatedImage(response.data.annotated_image || null);
           break;

@@ -12,3 +12,6 @@ python-multipart>=0.0.6
 
 # 腾讯云 API
 tencentcloud-sdk-python>=3.0.0
+
+# 车牌识别
+hyperlpr3>=0.1.0

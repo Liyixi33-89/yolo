@@ -1,5 +1,5 @@
 // 任务类型 - YOLO 本地检测
-export type YoloTaskType = 'detect' | 'classify' | 'pose' | 'segment';
+export type YoloTaskType = 'detect' | 'classify' | 'pose' | 'segment' | 'lpr';
 
 // 任务类型 - 腾讯云检测
 export type TencentTaskType = 'tencent_detect' | 'tencent_label' | 'tencent_car';
@@ -64,6 +64,14 @@ export const YOLO_TASKS: TaskConfig[] = [
     description: '像素级的物体分割',
     icon: '🎭',
     color: 'bg-orange-500',
+    provider: 'yolo',
+  },
+  {
+    id: 'lpr',
+    name: '车牌识别',
+    description: '识别中国车牌号码',
+    icon: '🚘',
+    color: 'bg-cyan-500',
     provider: 'yolo',
   },
 ];

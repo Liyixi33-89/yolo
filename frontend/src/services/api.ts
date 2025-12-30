@@ -213,6 +213,38 @@ export const segmentImage = async (
   return response.data;
 };
 
+// ==================== 车牌识别 API ====================
+
+// 车牌识别项
+export interface LicensePlateItem {
+  plate_number: string;      // 车牌号码
+  plate_type: string;        // 车牌类型（蓝牌、绿牌等）
+  plate_color: string;       // 车牌颜色
+  confidence: number;        // 置信度
+  bbox: BBox;                // 车牌位置
+}
+
+// 车牌识别响应
+export interface LPRData {
+  plates: LicensePlateItem[];
+  count: number;
+  annotated_image?: string;
+}
+
+// 车牌识别
+export const recognizeLicensePlate = async (
+  imageBase64: string,
+  returnImage: boolean = true
+): Promise<APIResponse<LPRData>> => {
+  const response = await api.post('/api/lpr', {
+    image_base64: imageBase64,
+    return_image: returnImage
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return response.data;
+};
+
 // ==================== 腾讯云 API ====================
 
 // 腾讯云检测项

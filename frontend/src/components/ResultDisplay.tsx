@@ -4,12 +4,13 @@ import {
   ClassificationData,
   PoseData,
   SegmentData,
+  LPRData,
   TencentDetectionData,
   TencentLabelData,
   TencentCarData,
 } from '../services/api';
 
-type ResultDataType = DetectionData | ClassificationData | PoseData | SegmentData | TencentDetectionData | TencentLabelData | TencentCarData | null;
+type ResultDataType = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | null;
 
 interface ResultDisplayProps {
   task: TaskType;
@@ -324,6 +325,96 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
     );
   };
 
+  // 渲染车牌识别结果
+  const renderLPRResults = (lprData: LPRData) => {
+    const { plates, count } = lprData;
+
+    // 车牌类型对应的颜色样式
+    const plateColorStyles: Record<string, { bg: string; text: string; border: string }> = {
+      '蓝牌': { bg: 'bg-blue-500', text: 'text-white', border: 'border-blue-600' },
+      '黄牌': { bg: 'bg-yellow-400', text: 'text-black', border: 'border-yellow-500' },
+      '绿牌': { bg: 'bg-green-500', text: 'text-white', border: 'border-green-600' },
+      '绿牌(小型新能源)': { bg: 'bg-gradient-to-r from-green-400 to-green-600', text: 'text-white', border: 'border-green-600' },
+      '黄绿牌(大型新能源)': { bg: 'bg-gradient-to-r from-yellow-400 to-green-500', text: 'text-black', border: 'border-green-500' },
+      '白牌': { bg: 'bg-white', text: 'text-black', border: 'border-gray-400' },
+      '黑牌': { bg: 'bg-black', text: 'text-white', border: 'border-gray-700' },
+    };
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-cyan-50 p-3">
+          <span className="text-sm text-cyan-700">🚘 识别到车牌</span>
+          <span className="text-lg font-bold text-cyan-700">{count} 个</span>
+        </div>
+
+        {plates.length > 0 ? (
+          plates.map((plate, index) => {
+            const colorStyle = plateColorStyles[plate.plate_type] || plateColorStyles['蓝牌'];
+            
+            return (
+              <div
+                key={index}
+                className="rounded-xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-blue-50 p-4 shadow-sm"
+              >
+                {/* 车牌号展示 - 仿真实车牌样式 */}
+                <div className="flex justify-center mb-4">
+                  <div 
+                    className={`px-6 py-3 rounded-lg ${colorStyle.bg} ${colorStyle.text} border-2 ${colorStyle.border} shadow-lg`}
+                  >
+                    <span className="text-2xl font-bold tracking-wider font-mono">
+                      {plate.plate_number}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 详细信息 */}
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-lg bg-white/70 p-2">
+                    <span className="text-xs text-gray-500 block">车牌类型</span>
+                    <p className="font-medium text-gray-800 text-sm">{plate.plate_type}</p>
+                  </div>
+                  <div className="rounded-lg bg-white/70 p-2">
+                    <span className="text-xs text-gray-500 block">车牌颜色</span>
+                    <p className="font-medium text-gray-800 text-sm">{plate.plate_color}</p>
+                  </div>
+                  <div className="rounded-lg bg-white/70 p-2">
+                    <span className="text-xs text-gray-500 block">置信度</span>
+                    <p className="font-medium text-cyan-600 text-sm">
+                      {(plate.confidence * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="rounded-lg border border-gray-200 bg-white p-6 text-center">
+            <span className="text-4xl">🚫</span>
+            <p className="mt-2 text-gray-500">未检测到车牌</p>
+            <p className="mt-1 text-xs text-gray-400">请确保图片中包含清晰的车牌</p>
+          </div>
+        )}
+
+        {/* 支持的车牌类型说明 */}
+        <div className="rounded-lg border border-gray-200 bg-white p-3">
+          <h4 className="mb-2 text-sm font-medium text-gray-700">📋 支持的车牌类型</h4>
+          <div className="flex flex-wrap gap-2">
+            {['蓝牌', '黄牌', '绿牌', '白牌', '黑牌'].map((type) => (
+              <span
+                key={type}
+                className={`inline-flex items-center rounded px-2 py-1 text-xs font-medium ${
+                  plateColorStyles[type]?.bg || 'bg-gray-200'
+                } ${plateColorStyles[type]?.text || 'text-gray-700'}`}
+              >
+                {type}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ==================== 腾讯云结果渲染 ====================
 
   // 渲染腾讯云物体检测结果
@@ -535,6 +626,8 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
         return renderPoseResults(data as PoseData);
       case 'segment':
         return renderSegmentResults(data as SegmentData);
+      case 'lpr':
+        return renderLPRResults(data as LPRData);
       // 腾讯云检测
       case 'tencent_detect':
         return renderTencentDetectionResults(data as TencentDetectionData);
