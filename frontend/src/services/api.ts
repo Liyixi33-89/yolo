@@ -213,4 +213,108 @@ export const segmentImage = async (
   return response.data;
 };
 
+// ==================== 腾讯云 API ====================
+
+// 腾讯云检测项
+export interface TencentDetectionItem {
+  name: string;
+  confidence: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// 腾讯云标签项
+export interface TencentLabelItem {
+  name: string;
+  confidence: number;
+  first_category?: string;
+  second_category?: string;
+}
+
+// 腾讯云车辆识别项
+export interface TencentCarItem {
+  serial: string;        // 车系
+  brand: string;         // 品牌
+  type: string;          // 车辆类型
+  color: string;         // 颜色
+  confidence: number;    // 置信度
+  year: number;          // 年份
+  plate_content?: string; // 车牌
+  plate_confidence?: number;
+  location: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+// 腾讯云检测响应
+export interface TencentDetectionData {
+  objects: TencentDetectionItem[];
+  count: number;
+}
+
+// 腾讯云标签响应
+export interface TencentLabelData {
+  labels: TencentLabelItem[];
+  count: number;
+}
+
+// 腾讯云车辆识别响应
+export interface TencentCarData {
+  cars: TencentCarItem[];
+  count: number;
+}
+
+// 腾讯云 API 类型
+export type TencentApiType = 'detect' | 'label' | 'car';
+
+// 腾讯云状态检查
+export const checkTencentStatus = async () => {
+  const response = await api.get('/api/tencent/status');
+  return response.data;
+};
+
+// 腾讯云物体检测
+export const tencentDetect = async (
+  imageBase64: string
+): Promise<APIResponse<TencentDetectionData>> => {
+  const response = await api.post('/api/tencent/detect', {
+    image_base64: imageBase64,
+    api_type: 'detect'
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return response.data;
+};
+
+// 腾讯云图像标签
+export const tencentLabel = async (
+  imageBase64: string
+): Promise<APIResponse<TencentLabelData>> => {
+  const response = await api.post('/api/tencent/detect', {
+    image_base64: imageBase64,
+    api_type: 'label'
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return response.data;
+};
+
+// 腾讯云车辆识别
+export const tencentCarRecognize = async (
+  imageBase64: string
+): Promise<APIResponse<TencentCarData>> => {
+  const response = await api.post('/api/tencent/detect', {
+    image_base64: imageBase64,
+    api_type: 'car'
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return response.data;
+};
+
 export default api;

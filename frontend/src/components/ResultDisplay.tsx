@@ -1,19 +1,25 @@
-import { TaskType, getTaskConfig } from '../types';
+import { TaskType, getTaskConfig, isTencentTask } from '../types';
 import {
   DetectionData,
   ClassificationData,
   PoseData,
   SegmentData,
+  TencentDetectionData,
+  TencentLabelData,
+  TencentCarData,
 } from '../services/api';
+
+type ResultDataType = DetectionData | ClassificationData | PoseData | SegmentData | TencentDetectionData | TencentLabelData | TencentCarData | null;
 
 interface ResultDisplayProps {
   task: TaskType;
-  data: DetectionData | ClassificationData | PoseData | SegmentData | null;
+  data: ResultDataType;
   annotatedImage?: string | null;
 }
 
 const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
   const taskConfig = getTaskConfig(task);
+  const isTencent = isTencentTask(task);
 
   if (!data) return null;
 
@@ -29,9 +35,9 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
 
     return (
       <div className="space-y-3">
-        <div className="flex items-center justify-between rounded-lg bg-blue-50 p-3">
-          <span className="text-sm text-blue-700">检测到目标</span>
-          <span className="text-lg font-bold text-blue-700">{count} 个</span>
+        <div className="flex items-center justify-between rounded-lg bg-amber-50 p-3">
+          <span className="text-sm text-amber-700">检测到目标</span>
+          <span className="text-lg font-bold text-amber-700">{count} 个</span>
         </div>
         
         {Object.entries(classCount).length > 0 && (
@@ -44,7 +50,7 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
                   className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
                 >
                   {className}
-                  <span className="rounded-full bg-primary-500 px-1.5 text-white">
+                  <span className="rounded-full bg-amber-500 px-1.5 text-white">
                     {cnt}
                   </span>
                 </span>
@@ -65,7 +71,7 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
                   className="flex items-center justify-between border-b border-gray-100 p-3 last:border-b-0"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-100 text-xs font-medium text-primary-700">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-xs font-medium text-amber-700">
                       {index + 1}
                     </span>
                     <span className="font-medium text-gray-800">
@@ -318,6 +324,229 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
     );
   };
 
+  // ==================== 腾讯云结果渲染 ====================
+
+  // 渲染腾讯云物体检测结果
+  const renderTencentDetectionResults = (detectionData: TencentDetectionData) => {
+    const { objects, count } = detectionData;
+    
+    // 按名称分组统计
+    const nameCount: Record<string, number> = {};
+    objects.forEach((obj) => {
+      nameCount[obj.name] = (nameCount[obj.name] || 0) + 1;
+    });
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-sky-50 p-3">
+          <span className="text-sm text-sky-700">☁️ 腾讯云检测到目标</span>
+          <span className="text-lg font-bold text-sky-700">{count} 个</span>
+        </div>
+        
+        {Object.entries(nameCount).length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <h4 className="mb-2 text-sm font-medium text-gray-700">类别统计</h4>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(nameCount).map(([name, cnt]) => (
+                <span
+                  key={name}
+                  className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700"
+                >
+                  {name}
+                  <span className="rounded-full bg-sky-500 px-1.5 text-white">
+                    {cnt}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {objects.length > 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white">
+            <h4 className="border-b border-gray-200 p-3 text-sm font-medium text-gray-700">
+              检测详情
+            </h4>
+            <div className="max-h-48 overflow-y-auto">
+              {objects.map((obj, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between border-b border-gray-100 p-3 last:border-b-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-100 text-xs font-medium text-sky-700">
+                      {index + 1}
+                    </span>
+                    <span className="font-medium text-gray-800">
+                      {obj.name}
+                    </span>
+                  </div>
+                  <span className="rounded bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
+                    {(obj.confidence * 100).toFixed(1)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 渲染腾讯云图像标签结果
+  const renderTencentLabelResults = (labelData: TencentLabelData) => {
+    const { labels, count } = labelData;
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-teal-50 p-3">
+          <span className="text-sm text-teal-700">☁️ 腾讯云识别标签</span>
+          <span className="text-lg font-bold text-teal-700">{count} 个</span>
+        </div>
+
+        {labels.length > 0 && (
+          <div className="rounded-lg border border-teal-200 bg-white p-3">
+            <h4 className="mb-3 text-sm font-medium text-gray-700">🏷️ 图像标签</h4>
+            <div className="flex flex-wrap gap-2">
+              {labels.map((label, index) => (
+                <div
+                  key={index}
+                  className="inline-flex flex-col items-center rounded-lg bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-200 px-3 py-2"
+                >
+                  <span className="font-medium text-teal-700">{label.name}</span>
+                  <span className="text-xs text-teal-500">
+                    {(label.confidence * 100).toFixed(0)}%
+                  </span>
+                  {label.first_category && (
+                    <span className="mt-1 text-xs text-gray-400">
+                      {label.first_category} {label.second_category ? `> ${label.second_category}` : ''}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 置信度排行 */}
+        {labels.length > 0 && (
+          <div className="rounded-lg border border-teal-200 bg-white p-3">
+            <h4 className="mb-3 text-sm font-medium text-gray-700">📊 置信度排行</h4>
+            <div className="space-y-2">
+              {labels.slice(0, 5).map((label, index) => (
+                <div key={index} className="relative">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-700">{label.name}</span>
+                    <span className="text-teal-600 font-medium">
+                      {(label.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-teal-400 to-cyan-400 transition-all"
+                      style={{ width: `${label.confidence * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 渲染腾讯云车辆识别结果
+  const renderTencentCarResults = (carData: TencentCarData) => {
+    const { cars, count } = carData;
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-indigo-50 p-3">
+          <span className="text-sm text-indigo-700">☁️ 腾讯云识别车辆</span>
+          <span className="text-lg font-bold text-indigo-700">{count} 辆</span>
+        </div>
+
+        {cars.length > 0 ? (
+          cars.map((car, index) => (
+            <div
+              key={index}
+              className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50 p-4"
+            >
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500 text-xl text-white">
+                  🚗
+                </span>
+                <div className="flex-1">
+                  <h4 className="text-lg font-bold text-indigo-700">
+                    {car.brand} {car.serial}
+                  </h4>
+                  <p className="text-sm text-gray-600">{car.type}</p>
+                </div>
+                <span className="rounded-full bg-indigo-500 px-3 py-1 text-sm font-medium text-white">
+                  {(car.confidence * 100).toFixed(0)}%
+                </span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-white/60 p-2">
+                  <span className="text-xs text-gray-500">颜色</span>
+                  <p className="font-medium text-gray-800">{car.color || '未知'}</p>
+                </div>
+                <div className="rounded-lg bg-white/60 p-2">
+                  <span className="text-xs text-gray-500">年份</span>
+                  <p className="font-medium text-gray-800">{car.year || '未知'}</p>
+                </div>
+                {car.plate_content && (
+                  <div className="col-span-2 rounded-lg bg-white/60 p-2">
+                    <span className="text-xs text-gray-500">车牌号</span>
+                    <p className="font-medium text-gray-800">
+                      {car.plate_content}
+                      {car.plate_confidence && (
+                        <span className="ml-2 text-xs text-indigo-500">
+                          ({(car.plate_confidence * 100).toFixed(0)}%)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-lg border border-gray-200 bg-white p-6 text-center">
+            <span className="text-4xl">🚫</span>
+            <p className="mt-2 text-gray-500">未检测到车辆</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 根据任务类型选择渲染方法
+  const renderResults = () => {
+    switch (task) {
+      // YOLO 本地检测
+      case 'detect':
+        return renderDetectionResults(data as DetectionData);
+      case 'classify':
+        return renderClassificationResults(data as ClassificationData);
+      case 'pose':
+        return renderPoseResults(data as PoseData);
+      case 'segment':
+        return renderSegmentResults(data as SegmentData);
+      // 腾讯云检测
+      case 'tencent_detect':
+        return renderTencentDetectionResults(data as TencentDetectionData);
+      case 'tencent_label':
+        return renderTencentLabelResults(data as TencentLabelData);
+      case 'tencent_car':
+        return renderTencentCarResults(data as TencentCarData);
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="w-full space-y-4">
       {/* 标注图像 */}
@@ -332,16 +561,18 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
       )}
 
       {/* 任务标签 */}
-      <div className="flex items-center gap-2">
+      <div className={`flex items-center gap-2 rounded-lg p-2 ${isTencent ? 'bg-blue-50' : 'bg-amber-50'}`}>
         <span className="text-xl">{taskConfig?.icon}</span>
-        <span className="font-medium text-gray-800">{taskConfig?.name}</span>
+        <span className={`font-medium ${isTencent ? 'text-blue-700' : 'text-amber-700'}`}>
+          {taskConfig?.name}
+        </span>
+        <span className={`ml-auto rounded-full px-2 py-0.5 text-xs ${isTencent ? 'bg-blue-200 text-blue-700' : 'bg-amber-200 text-amber-700'}`}>
+          {isTencent ? '腾讯云' : 'YOLO'}
+        </span>
       </div>
 
       {/* 结果详情 */}
-      {task === 'detect' && renderDetectionResults(data as DetectionData)}
-      {task === 'classify' && renderClassificationResults(data as ClassificationData)}
-      {task === 'pose' && renderPoseResults(data as PoseData)}
-      {task === 'segment' && renderSegmentResults(data as SegmentData)}
+      {renderResults()}
     </div>
   );
 };

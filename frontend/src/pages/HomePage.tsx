@@ -1,19 +1,25 @@
 import { useState, useCallback } from 'react';
-import { ArrowLeft, Send, RotateCcw, Zap } from 'lucide-react';
+import { ArrowLeft, Send, RotateCcw, Zap, Cloud } from 'lucide-react';
 import { ImagePicker, TaskSelector, ResultDisplay, Loading } from '../components';
-import { TaskType } from '../types';
+import { TaskType, isTencentTask, getTaskProvider } from '../types';
 import {
   detectObjects,
   classifyImage,
   estimatePose,
   segmentImage,
+  tencentDetect,
+  tencentLabel,
+  tencentCarRecognize,
   DetectionData,
   ClassificationData,
   PoseData,
   SegmentData,
+  TencentDetectionData,
+  TencentLabelData,
+  TencentCarData,
 } from '../services/api';
 
-type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | null;
+type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | TencentDetectionData | TencentLabelData | TencentCarData | null;
 
 const HomePage = () => {
   const [selectedTask, setSelectedTask] = useState<TaskType>('detect');
@@ -23,6 +29,10 @@ const HomePage = () => {
   const [annotatedImage, setAnnotatedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
+
+  // 获取当前任务的提供商
+  const currentProvider = getTaskProvider(selectedTask);
+  const isTencent = isTencentTask(selectedTask);
 
   // 处理图片选择
   const handleImageSelect = useCallback((base64: string) => {
@@ -58,6 +68,7 @@ const HomePage = () => {
       let response;
 
       switch (selectedTask) {
+        // YOLO 本地检测
         case 'detect':
           response = await detectObjects(imageBase64, 0.25, true);
           setResult(response.data);
@@ -79,6 +90,22 @@ const HomePage = () => {
           response = await segmentImage(imageBase64, 0.25, true);
           setResult(response.data);
           setAnnotatedImage(response.data.annotated_image || null);
+          break;
+
+        // 腾讯云检测
+        case 'tencent_detect':
+          response = await tencentDetect(imageBase64);
+          setResult(response.data);
+          break;
+
+        case 'tencent_label':
+          response = await tencentLabel(imageBase64);
+          setResult(response.data);
+          break;
+
+        case 'tencent_car':
+          response = await tencentCarRecognize(imageBase64);
+          setResult(response.data);
           break;
       }
 
@@ -121,8 +148,17 @@ const HomePage = () => {
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            <Zap className="h-6 w-6 text-primary-500" />
-            <span className="text-lg font-bold text-gray-800">YOLO11</span>
+            {isTencent ? (
+              <>
+                <Cloud className="h-6 w-6 text-blue-500" />
+                <span className="text-lg font-bold text-gray-800">腾讯云AI</span>
+              </>
+            ) : (
+              <>
+                <Zap className="h-6 w-6 text-amber-500" />
+                <span className="text-lg font-bold text-gray-800">YOLO11</span>
+              </>
+            )}
           </div>
         )}
         
@@ -197,7 +233,9 @@ const HomePage = () => {
               className={`
                 flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-medium transition-all
                 ${imageBase64 && !isLoading
-                  ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30 active:scale-[0.98]'
+                  ? isTencent 
+                    ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30 active:scale-[0.98]'
+                    : 'bg-amber-500 text-white shadow-lg shadow-amber-500/30 active:scale-[0.98]'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }
               `}
@@ -211,8 +249,8 @@ const HomePage = () => {
                 </>
               ) : (
                 <>
-                  <Send size={20} />
-                  <span>开始识别</span>
+                  {isTencent ? <Cloud size={20} /> : <Send size={20} />}
+                  <span>{isTencent ? '云端识别' : '本地识别'}</span>
                 </>
               )}
             </button>
@@ -224,7 +262,7 @@ const HomePage = () => {
       {isLoading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
           <div className="rounded-2xl bg-white p-6 shadow-xl">
-            <Loading message="AI 正在分析图像..." />
+            <Loading message={isTencent ? '腾讯云 AI 正在分析...' : 'YOLO 正在分析图像...'} />
           </div>
         </div>
       )}
