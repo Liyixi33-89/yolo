@@ -133,15 +133,26 @@ class BaiduAIRequest(BaseModel):
 # ==================== 百度 AI 配置 ====================
 class BaiduAIConfig:
     """百度 AI 配置管理"""
-    # 从环境变量读取密钥（安全方式）
-    APP_ID = os.environ.get("BAIDU_APP_ID", "")
-    API_KEY = os.environ.get("BAIDU_API_KEY", "")
-    SECRET_KEY = os.environ.get("BAIDU_SECRET_KEY", "")
+    
+    @classmethod
+    def get_app_id(cls) -> str:
+        """动态获取 APP_ID"""
+        return os.environ.get("BAIDU_APP_ID", "")
+    
+    @classmethod
+    def get_api_key(cls) -> str:
+        """动态获取 API_KEY"""
+        return os.environ.get("BAIDU_API_KEY", "")
+    
+    @classmethod
+    def get_secret_key(cls) -> str:
+        """动态获取 SECRET_KEY"""
+        return os.environ.get("BAIDU_SECRET_KEY", "")
     
     @classmethod
     def is_configured(cls) -> bool:
         """检查是否已配置"""
-        return bool(cls.APP_ID and cls.API_KEY and cls.SECRET_KEY)
+        return bool(cls.get_app_id() and cls.get_api_key() and cls.get_secret_key())
     
     @classmethod
     def get_image_client(cls):
@@ -150,7 +161,7 @@ class BaiduAIConfig:
             raise HTTPException(status_code=500, detail="百度 AI SDK 未安装")
         if not cls.is_configured():
             raise HTTPException(status_code=500, detail="百度 AI 密钥未配置，请设置环境变量 BAIDU_APP_ID, BAIDU_API_KEY 和 BAIDU_SECRET_KEY")
-        return AipImageClassify(cls.APP_ID, cls.API_KEY, cls.SECRET_KEY)
+        return AipImageClassify(cls.get_app_id(), cls.get_api_key(), cls.get_secret_key())
     
     @classmethod
     def get_face_client(cls):
@@ -159,7 +170,7 @@ class BaiduAIConfig:
             raise HTTPException(status_code=500, detail="百度 AI SDK 未安装")
         if not cls.is_configured():
             raise HTTPException(status_code=500, detail="百度 AI 密钥未配置")
-        return AipFace(cls.APP_ID, cls.API_KEY, cls.SECRET_KEY)
+        return AipFace(cls.get_app_id(), cls.get_api_key(), cls.get_secret_key())
 
 
 # ==================== 腾讯云配置 ====================
