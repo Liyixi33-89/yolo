@@ -410,8 +410,25 @@ export interface BaiduFaceData {
   source: string;
 }
 
+// 百度 AI 车型识别项
+export interface BaiduCarItem {
+  name: string;           // 车型名称
+  score: number;          // 置信度
+  year: string;           // 年份
+  baike_url?: string;     // 百科链接
+}
+
+// 百度 AI 车型识别响应
+export interface BaiduCarData {
+  cars: BaiduCarItem[];
+  count: number;
+  color_result?: string;  // 车身颜色
+  log_id?: number;
+  source: string;
+}
+
 // 百度 AI API 类型
-export type BaiduApiType = 'classify' | 'detect' | 'face';
+export type BaiduApiType = 'classify' | 'detect' | 'face' | 'car';
 
 // 百度 AI 状态检查
 export const checkBaiduStatus = async () => {
@@ -452,6 +469,19 @@ export const baiduFaceDetect = async (
   const response = await api.post('/api/baidu/detect', {
     image_base64: imageBase64,
     api_type: 'face'
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return response.data;
+};
+
+// 百度 AI 车型识别
+export const baiduCarDetect = async (
+  imageBase64: string
+): Promise<APIResponse<BaiduCarData>> => {
+  const response = await api.post('/api/baidu/detect', {
+    image_base64: imageBase64,
+    api_type: 'car'
   }, {
     headers: { 'Content-Type': 'application/json' },
   });

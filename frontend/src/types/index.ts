@@ -5,7 +5,7 @@ export type YoloTaskType = 'detect' | 'classify' | 'pose' | 'segment' | 'lpr';
 export type TencentTaskType = 'tencent_detect' | 'tencent_label' | 'tencent_car';
 
 // 任务类型 - 百度 AI
-export type BaiduTaskType = 'baidu_classify' | 'baidu_detect' | 'baidu_face';
+export type BaiduTaskType = 'baidu_classify' | 'baidu_detect' | 'baidu_face' | 'baidu_car';
 
 // 所有任务类型
 export type TaskType = YoloTaskType | TencentTaskType | BaiduTaskType;
@@ -131,6 +131,14 @@ export const BAIDU_TASKS: TaskConfig[] = [
     description: '检测人脸年龄性别表情',
     icon: '👤',
     color: 'bg-pink-500',
+    provider: 'baidu',
+  },
+  {
+    id: 'baidu_car',
+    name: '车型识别',
+    description: '识别车辆品牌型号年份',
+    icon: '🚙',
+    color: 'bg-orange-500',
     provider: 'baidu',
   },
 ];

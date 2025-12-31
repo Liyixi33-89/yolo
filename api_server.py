@@ -1454,6 +1454,49 @@ async def baidu_ai_detect(request: BaiduAIRequest):
                 }
             })
             
+        elif request.api_type == "car":
+            # 车型识别
+            client = BaiduAIConfig.get_image_client()
+            
+            # 调用车型识别接口
+            result = client.carDetect(image_bytes)
+            
+            logger.info(f"[BaiduAI] 车型识别原始结果: {result}")
+            
+            # 检查错误
+            if "error_code" in result:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"百度 AI 错误: {result.get('error_msg', '未知错误')} (错误码: {result.get('error_code')})"
+                )
+            
+            # 解析结果
+            cars = []
+            result_list = result.get("result") or []
+            for item in result_list:
+                cars.append({
+                    "name": item.get("name", ""),
+                    "score": item.get("score", 0),
+                    "year": item.get("year", ""),
+                    "baike_url": item.get("baike_info", {}).get("baike_url", "") if item.get("baike_info") else ""
+                })
+            
+            # 获取车身颜色
+            color_result = result.get("color_result", "")
+            
+            return JSONResponse(content={
+                "success": True,
+                "task": "baidu_car",
+                "message": f"百度 AI 车型识别完成，识别到 {len(cars)} 个结果",
+                "data": {
+                    "cars": cars,
+                    "count": len(cars),
+                    "color_result": color_result,
+                    "log_id": result.get("log_id"),
+                    "source": "baidu_ai"
+                }
+            })
+            
         else:
             raise HTTPException(status_code=400, detail=f"不支持的 API 类型: {request.api_type}")
             

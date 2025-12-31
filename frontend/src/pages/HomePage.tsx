@@ -14,6 +14,7 @@ import {
   baiduClassify,
   baiduDetect,
   baiduFaceDetect,
+  baiduCarDetect,
   DetectionData,
   ClassificationData,
   PoseData,
@@ -25,9 +26,10 @@ import {
   BaiduClassifyData,
   BaiduDetectData,
   BaiduFaceData,
+  BaiduCarData,
 } from '../services/api';
 
-type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | null;
+type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | BaiduCarData | null;
 
 const HomePage = () => {
   const [selectedTask, setSelectedTask] = useState<TaskType>('detect');
@@ -136,6 +138,11 @@ const HomePage = () => {
 
         case 'baidu_face':
           response = await baiduFaceDetect(imageBase64);
+          setResult(response.data);
+          break;
+
+        case 'baidu_car':
+          response = await baiduCarDetect(imageBase64);
           setResult(response.data);
           break;
       }

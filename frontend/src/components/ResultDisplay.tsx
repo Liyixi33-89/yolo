@@ -11,9 +11,10 @@ import {
   BaiduClassifyData,
   BaiduDetectData,
   BaiduFaceData,
+  BaiduCarData,
 } from '../services/api';
 
-type ResultDataType = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | null;
+type ResultDataType = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | BaiduCarData | null;
 
 interface ResultDisplayProps {
   task: TaskType;
@@ -874,6 +875,105 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
     );
   };
 
+  // 渲染百度 AI 车型识别结果
+  const renderBaiduCarResults = (carData: BaiduCarData) => {
+    const { cars, count, color_result } = carData;
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-lg bg-orange-50 p-3">
+          <span className="text-sm text-orange-700">🔴 百度AI车型识别</span>
+          <span className="text-lg font-bold text-orange-700">{count} 个结果</span>
+        </div>
+
+        {/* 车身颜色 */}
+        {color_result && (
+          <div className="rounded-lg border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎨</span>
+              <span className="text-sm text-gray-600">车身颜色：</span>
+              <span className="font-bold text-orange-700">{color_result}</span>
+            </div>
+          </div>
+        )}
+
+        {cars.length > 0 ? (
+          <div className="rounded-lg border border-orange-200 bg-white p-3">
+            <h4 className="mb-3 text-sm font-medium text-gray-700">🚙 识别结果</h4>
+            <div className="space-y-3">
+              {cars.slice(0, 5).map((car, index) => (
+                <div
+                  key={index}
+                  className="rounded-lg bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 p-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500 text-xl text-white">
+                      🚗
+                    </span>
+                    <div className="flex-1">
+                      <h5 className="text-lg font-bold text-orange-700">
+                        {car.name}
+                      </h5>
+                      {car.year && car.year !== '0' && (
+                        <p className="text-sm text-gray-600">年份：{car.year}</p>
+                      )}
+                    </div>
+                    <span className="rounded-full bg-orange-500 px-3 py-1 text-sm font-medium text-white">
+                      {(car.score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+
+                  {/* 百科链接 */}
+                  {car.baike_url && (
+                    <a
+                      href={car.baike_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center text-xs text-orange-600 hover:underline"
+                    >
+                      📚 查看百科详情 →
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-gray-200 bg-white p-6 text-center">
+            <span className="text-4xl">🚫</span>
+            <p className="mt-2 text-gray-500">未检测到车辆</p>
+            <p className="mt-1 text-xs text-gray-400">请确保图片中包含清晰的车辆</p>
+          </div>
+        )}
+
+        {/* 置信度排行 */}
+        {cars.length > 0 && (
+          <div className="rounded-lg border border-orange-200 bg-white p-3">
+            <h4 className="mb-3 text-sm font-medium text-gray-700">📊 置信度排行</h4>
+            <div className="space-y-2">
+              {cars.slice(0, 5).map((car, index) => (
+                <div key={index} className="relative">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-700 truncate max-w-[200px]">{car.name}</span>
+                    <span className="text-orange-600 font-medium">
+                      {(car.score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-orange-400 to-amber-400 transition-all"
+                      style={{ width: `${car.score * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // 根据任务类型选择渲染方法
   const renderResults = () => {
     switch (task) {
@@ -902,6 +1002,8 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
         return renderBaiduDetectResults(data as BaiduDetectData);
       case 'baidu_face':
         return renderBaiduFaceResults(data as BaiduFaceData);
+      case 'baidu_car':
+        return renderBaiduCarResults(data as BaiduCarData);
       default:
         return null;
     }
