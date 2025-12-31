@@ -77,6 +77,14 @@ class BaiduFreeImageSearchRequest(BaseModel):
     brief: Optional[str] = None
 
 
+class VideoPoseRequest(BaseModel):
+    """视频姿态估计请求模型"""
+    video_base64: str  # Base64 编码的视频数据
+    conf: float = 0.25  # 置信度阈值
+    skip_frames: int = 2  # 跳帧数（每隔几帧处理一次，加快处理速度）
+    return_video: bool = True  # 是否返回标注后的视频
+
+
 # ==================== 响应模型 ====================
 
 class BBox(BaseModel):

@@ -131,6 +131,23 @@ export interface SegmentData {
   annotated_image?: string;
 }
 
+// 视频姿态估计相关类型
+export interface VideoFramePose {
+  frame: number;
+  poses: PoseItem[];
+}
+
+export interface VideoPoseData {
+  total_frames: number;
+  processed_frames: number;
+  fps: number;
+  width: number;
+  height: number;
+  max_persons_detected: number;
+  keypoints_data: VideoFramePose[];
+  annotated_video?: string;
+}
+
 // 健康检查
 export const healthCheck = async () => {
   const response = await api.get('/api/health');
@@ -209,6 +226,28 @@ export const segmentImage = async (
     return_image: returnImage
   }, {
     headers: { 'Content-Type': 'application/json' },
+  });
+  return response.data;
+};
+
+// 视频姿态估计
+export const videoPoseEstimation = async (
+  videoBase64: string,
+  conf: number = 0.25,
+  skipFrames: number = 2,
+  returnVideo: boolean = true
+): Promise<APIResponse<VideoPoseData>> => {
+  console.log('[videoPoseEstimation] 开始处理视频，skip_frames:', skipFrames);
+  
+  // 视频处理需要更长的超时时间
+  const response = await api.post('/api/video/pose', {
+    video_base64: videoBase64,
+    conf: conf,
+    skip_frames: skipFrames,
+    return_video: returnVideo
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 300000, // 5分钟超时
   });
   return response.data;
 };

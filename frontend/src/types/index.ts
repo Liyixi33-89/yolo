@@ -1,5 +1,5 @@
 // 任务类型 - YOLO 本地检测
-export type YoloTaskType = 'detect' | 'classify' | 'pose' | 'segment' | 'lpr';
+export type YoloTaskType = 'detect' | 'classify' | 'pose' | 'segment' | 'lpr' | 'video_pose';
 
 // 任务类型 - 腾讯云检测
 export type TencentTaskType = 'tencent_detect' | 'tencent_label' | 'tencent_car';
@@ -75,6 +75,14 @@ export const YOLO_TASKS: TaskConfig[] = [
     description: '识别中国车牌号码',
     icon: '🚘',
     color: 'bg-cyan-500',
+    provider: 'yolo',
+  },
+  {
+    id: 'video_pose',
+    name: '视频动作捕获',
+    description: '分析视频中人物动作姿态',
+    icon: '🎬',
+    color: 'bg-rose-500',
     provider: 'yolo',
   },
 ];
@@ -199,4 +207,9 @@ export const isTencentTask = (taskId: TaskType): boolean => {
 // 判断是否是百度 AI 任务
 export const isBaiduTask = (taskId: TaskType): boolean => {
   return taskId.startsWith('baidu_');
+};
+
+// 判断是否是视频任务
+export const isVideoTask = (taskId: TaskType): boolean => {
+  return taskId === 'video_pose';
 };

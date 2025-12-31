@@ -1,4 +1,6 @@
-import { TaskType, getTaskConfig, isTencentTask, isBaiduTask } from '../types';
+import { useState, useRef } from 'react';
+import { Play, Pause, Download } from 'lucide-react';
+import { TaskType, getTaskConfig, isTencentTask, isBaiduTask, isVideoTask } from '../types';
 import {
   DetectionData,
   ClassificationData,
@@ -12,20 +14,47 @@ import {
   BaiduDetectData,
   BaiduFaceData,
   BaiduCarData,
+  VideoPoseData,
 } from '../services/api';
 
-type ResultDataType = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | BaiduCarData | null;
+type ResultDataType = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | BaiduCarData | VideoPoseData | null;
 
 interface ResultDisplayProps {
   task: TaskType;
   data: ResultDataType;
   annotatedImage?: string | null;
+  annotatedVideo?: string | null;
 }
 
-const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
+const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDisplayProps) => {
   const taskConfig = getTaskConfig(task);
   const isTencent = isTencentTask(task);
   const isBaidu = isBaiduTask(task);
+  const isVideo = isVideoTask(task);
+  
+  // 视频播放状态
+  const [isPlaying, setIsPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  
+  // 切换视频播放状态
+  const togglePlay = () => {
+    if (!videoRef.current) return;
+    if (isPlaying) {
+      videoRef.current.pause();
+    } else {
+      videoRef.current.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
+  
+  // 下载视频
+  const handleDownloadVideo = () => {
+    if (!annotatedVideo) return;
+    const link = document.createElement('a');
+    link.href = annotatedVideo;
+    link.download = 'pose_result.mp4';
+    link.click();
+  };
 
   if (!data) return null;
 
@@ -1004,15 +1033,129 @@ const ResultDisplay = ({ task, data, annotatedImage }: ResultDisplayProps) => {
         return renderBaiduFaceResults(data as BaiduFaceData);
       case 'baidu_car':
         return renderBaiduCarResults(data as BaiduCarData);
+      // 视频动作捕获
+      case 'video_pose':
+        return renderVideoPoseResults(data as VideoPoseData);
       default:
         return null;
     }
   };
 
+  // 渲染视频姿态估计结果
+  const renderVideoPoseResults = (videoPoseData: VideoPoseData) => {
+    const { total_frames, processed_frames, fps, width, height, max_persons_detected, keypoints_data } = videoPoseData;
+
+    return (
+      <div className="space-y-3">
+        {/* 视频信息概览 */}
+        <div className="rounded-lg bg-rose-50 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-2xl">🎬</span>
+            <span className="text-lg font-bold text-rose-700">视频动作捕获完成</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg bg-white/70 p-2 text-center">
+              <span className="text-xs text-gray-500 block">处理帧数</span>
+              <p className="text-lg font-bold text-rose-600">{processed_frames}/{total_frames}</p>
+            </div>
+            <div className="rounded-lg bg-white/70 p-2 text-center">
+              <span className="text-xs text-gray-500 block">视频帧率</span>
+              <p className="text-lg font-bold text-rose-600">{fps} FPS</p>
+            </div>
+            <div className="rounded-lg bg-white/70 p-2 text-center">
+              <span className="text-xs text-gray-500 block">分辨率</span>
+              <p className="text-lg font-bold text-rose-600">{width}x{height}</p>
+            </div>
+            <div className="rounded-lg bg-white/70 p-2 text-center">
+              <span className="text-xs text-gray-500 block">最多检测人数</span>
+              <p className="text-lg font-bold text-rose-600">{max_persons_detected} 人</p>
+            </div>
+          </div>
+        </div>
+
+        {/* 关键帧数据预览 */}
+        {keypoints_data && keypoints_data.length > 0 && (
+          <div className="rounded-lg border border-rose-200 bg-white p-3">
+            <h4 className="mb-3 text-sm font-medium text-gray-700">🦴 关键帧姿态数据（前10帧）</h4>
+            <div className="max-h-48 overflow-y-auto space-y-2">
+              {keypoints_data.slice(0, 10).map((frameData, index) => (
+                <div
+                  key={index}
+                  className="rounded-lg bg-gray-50 p-2 text-sm"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-700">帧 #{frameData.frame}</span>
+                    <span className="text-rose-600">{frameData.poses.length} 人</span>
+                  </div>
+                  {frameData.poses.length > 0 && (
+                    <div className="mt-1 text-xs text-gray-500">
+                      {frameData.poses.map((pose, pIdx) => (
+                        <span key={pIdx} className="mr-2">
+                          人物{pose.person_id + 1}: {pose.keypoints.filter(k => k.confidence > 0.5).length}/17 关键点
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 关键点说明 */}
+        <div className="rounded-lg border border-gray-200 bg-white p-3">
+          <h4 className="mb-2 text-sm font-medium text-gray-700">📋 检测的关键点</h4>
+          <div className="flex flex-wrap gap-1">
+            {['鼻子', '眼睛', '耳朵', '肩膀', '肘部', '手腕', '髋部', '膝盖', '脚踝'].map((name, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs text-rose-700"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="w-full space-y-4">
+      {/* 标注视频 */}
+      {isVideo && annotatedVideo && (
+        <div className="relative rounded-xl overflow-hidden bg-black">
+          <video
+            ref={videoRef}
+            src={annotatedVideo}
+            className="w-full"
+            onEnded={() => setIsPlaying(false)}
+            playsInline
+            controls={false}
+          />
+          {/* 播放控制 */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <button
+              onClick={togglePlay}
+              className="flex h-16 w-16 items-center justify-center rounded-full bg-black/50 text-white transition-transform hover:scale-110"
+              aria-label={isPlaying ? '暂停' : '播放'}
+            >
+              {isPlaying ? <Pause size={32} /> : <Play size={32} className="ml-1" />}
+            </button>
+          </div>
+          {/* 下载按钮 */}
+          <button
+            onClick={handleDownloadVideo}
+            className="absolute top-2 right-2 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
+            aria-label="下载视频"
+          >
+            <Download size={20} />
+          </button>
+        </div>
+      )}
+      
       {/* 标注图像 */}
-      {annotatedImage && (
+      {!isVideo && annotatedImage && (
         <div className="image-container">
           <img
             src={`data:image/jpeg;base64,${annotatedImage}`}

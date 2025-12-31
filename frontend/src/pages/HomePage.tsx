@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
-import { ArrowLeft, Send, RotateCcw, Zap, Cloud } from 'lucide-react';
-import { ImagePicker, TaskSelector, ResultDisplay, Loading } from '../components';
-import { TaskType, isTencentTask, isBaiduTask } from '../types';
+import { ArrowLeft, Send, RotateCcw, Zap, Cloud, Video } from 'lucide-react';
+import { ImagePicker, VideoPicker, TaskSelector, ResultDisplay, Loading } from '../components';
+import { TaskType, isTencentTask, isBaiduTask, isVideoTask } from '../types';
 import {
   detectObjects,
   classifyImage,
@@ -15,6 +15,7 @@ import {
   baiduDetect,
   baiduFaceDetect,
   baiduCarDetect,
+  videoPoseEstimation,
   DetectionData,
   ClassificationData,
   PoseData,
@@ -27,22 +28,26 @@ import {
   BaiduDetectData,
   BaiduFaceData,
   BaiduCarData,
+  VideoPoseData,
 } from '../services/api';
 
-type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | BaiduCarData | null;
+type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | BaiduCarData | VideoPoseData | null;
 
 const HomePage = () => {
   const [selectedTask, setSelectedTask] = useState<TaskType>('detect');
   const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [videoBase64, setVideoBase64] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ResultData>(null);
   const [annotatedImage, setAnnotatedImage] = useState<string | null>(null);
+  const [annotatedVideo, setAnnotatedVideo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
 
   // 判断任务类型
   const isTencent = isTencentTask(selectedTask);
   const isBaidu = isBaiduTask(selectedTask);
+  const isVideo = isVideoTask(selectedTask);
   const isCloud = isTencent || isBaidu;
 
   // 处理图片选择
@@ -50,6 +55,17 @@ const HomePage = () => {
     setImageBase64(base64);
     setResult(null);
     setAnnotatedImage(null);
+    setAnnotatedVideo(null);
+    setError(null);
+    setShowResult(false);
+  }, []);
+
+  // 处理视频选择
+  const handleVideoSelect = useCallback((base64: string) => {
+    setVideoBase64(base64);
+    setResult(null);
+    setAnnotatedImage(null);
+    setAnnotatedVideo(null);
     setError(null);
     setShowResult(false);
   }, []);
@@ -59,13 +75,25 @@ const HomePage = () => {
     setSelectedTask(task);
     setResult(null);
     setAnnotatedImage(null);
+    setAnnotatedVideo(null);
     setError(null);
     setShowResult(false);
+    // 切换任务类型时清除对应的媒体数据
+    if (isVideoTask(task)) {
+      setImageBase64(null);
+    } else {
+      setVideoBase64(null);
+    }
   }, []);
 
   // 执行识别
   const handleAnalyze = useCallback(async () => {
-    if (!imageBase64) {
+    // 检查输入
+    if (isVideo && !videoBase64) {
+      setError('请先选择一个视频');
+      return;
+    }
+    if (!isVideo && !imageBase64) {
       setError('请先选择或拍摄一张图片');
       return;
     }
@@ -74,6 +102,7 @@ const HomePage = () => {
     setError(null);
     setResult(null);
     setAnnotatedImage(null);
+    setAnnotatedVideo(null);
 
     try {
       let response;
@@ -81,68 +110,75 @@ const HomePage = () => {
       switch (selectedTask) {
         // YOLO 本地检测
         case 'detect':
-          response = await detectObjects(imageBase64, 0.25, true);
+          response = await detectObjects(imageBase64!, 0.25, true);
           setResult(response.data);
           setAnnotatedImage(response.data.annotated_image || null);
           break;
 
         case 'classify':
-          response = await classifyImage(imageBase64, 0.25, 5);
+          response = await classifyImage(imageBase64!, 0.25, 5);
           setResult(response.data);
           break;
 
         case 'pose':
-          response = await estimatePose(imageBase64, 0.25, true);
+          response = await estimatePose(imageBase64!, 0.25, true);
           setResult(response.data);
           setAnnotatedImage(response.data.annotated_image || null);
           break;
 
         case 'segment':
-          response = await segmentImage(imageBase64, 0.25, true);
+          response = await segmentImage(imageBase64!, 0.25, true);
           setResult(response.data);
           setAnnotatedImage(response.data.annotated_image || null);
           break;
 
         case 'lpr':
-          response = await recognizeLicensePlate(imageBase64, true);
+          response = await recognizeLicensePlate(imageBase64!, true);
           setResult(response.data);
           setAnnotatedImage(response.data.annotated_image || null);
           break;
 
+        // 视频动作捕获
+        case 'video_pose':
+          response = await videoPoseEstimation(videoBase64!, 0.25, 2, true);
+          setResult(response.data);
+          setAnnotatedVideo(response.data.annotated_video || null);
+          break;
+
         // 腾讯云检测
         case 'tencent_detect':
-          response = await tencentDetect(imageBase64);
+          response = await tencentDetect(imageBase64!);
           setResult(response.data);
           break;
 
         case 'tencent_label':
-          response = await tencentLabel(imageBase64);
+          response = await tencentLabel(imageBase64!);
           setResult(response.data);
           break;
 
         case 'tencent_car':
-          response = await tencentCarRecognize(imageBase64);
+          response = await tencentCarRecognize(imageBase64!);
           setResult(response.data);
           break;
 
         // 百度 AI
         case 'baidu_classify':
-          response = await baiduClassify(imageBase64);
+          response = await baiduClassify(imageBase64!);
           setResult(response.data);
           break;
 
         case 'baidu_detect':
-          response = await baiduDetect(imageBase64);
+          response = await baiduDetect(imageBase64!);
           setResult(response.data);
           break;
 
         case 'baidu_face':
-          response = await baiduFaceDetect(imageBase64);
+          response = await baiduFaceDetect(imageBase64!);
           setResult(response.data);
           break;
 
         case 'baidu_car':
-          response = await baiduCarDetect(imageBase64);
+          response = await baiduCarDetect(imageBase64!);
           setResult(response.data);
           break;
       }
@@ -154,13 +190,15 @@ const HomePage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [imageBase64, selectedTask]);
+  }, [imageBase64, videoBase64, selectedTask, isVideo]);
 
   // 重置状态
   const handleReset = useCallback(() => {
     setImageBase64(null);
+    setVideoBase64(null);
     setResult(null);
     setAnnotatedImage(null);
+    setAnnotatedVideo(null);
     setError(null);
     setShowResult(false);
   }, []);
@@ -174,6 +212,7 @@ const HomePage = () => {
   const getBrandColor = () => {
     if (isBaidu) return { text: 'text-red-500', bg: 'bg-red-500', shadow: 'shadow-red-500/30' };
     if (isTencent) return { text: 'text-blue-500', bg: 'bg-blue-500', shadow: 'shadow-blue-500/30' };
+    if (isVideo) return { text: 'text-rose-500', bg: 'bg-rose-500', shadow: 'shadow-rose-500/30' };
     return { text: 'text-amber-500', bg: 'bg-amber-500', shadow: 'shadow-amber-500/30' };
   };
 
@@ -183,6 +222,7 @@ const HomePage = () => {
   const getBrandInfo = () => {
     if (isBaidu) return { icon: '🔴', name: '百度AI' };
     if (isTencent) return { icon: <Cloud className="h-6 w-6 text-blue-500" />, name: '腾讯云AI' };
+    if (isVideo) return { icon: <Video className="h-6 w-6 text-rose-500" />, name: '视频分析' };
     return { icon: <Zap className="h-6 w-6 text-amber-500" />, name: 'YOLO11' };
   };
 
@@ -192,8 +232,12 @@ const HomePage = () => {
   const getLoadingText = () => {
     if (isBaidu) return '百度 AI 正在分析...';
     if (isTencent) return '腾讯云 AI 正在分析...';
+    if (isVideo) return '正在处理视频，这可能需要一些时间...';
     return 'YOLO 正在分析图像...';
   };
+
+  // 判断是否可以提交
+  const canSubmit = isVideo ? !!videoBase64 : !!imageBase64;
 
   return (
     <div className="flex h-full flex-col bg-gray-50">
@@ -221,7 +265,7 @@ const HomePage = () => {
         )}
         
         <h1 className="absolute left-1/2 -translate-x-1/2 text-base font-medium text-gray-800">
-          {showResult ? '识别结果' : '视觉识别'}
+          {showResult ? '识别结果' : isVideo ? '视频分析' : '视觉识别'}
         </h1>
         
         {showResult ? (
@@ -248,18 +292,28 @@ const HomePage = () => {
               task={selectedTask}
               data={result}
               annotatedImage={annotatedImage}
+              annotatedVideo={annotatedVideo}
             />
           </div>
         ) : (
           // 编辑页面
           <div className="mx-auto max-w-lg space-y-6">
-            {/* 图片选择 */}
+            {/* 图片/视频选择 */}
             <section className="rounded-2xl bg-white p-4 shadow-sm">
-              <h2 className="mb-3 text-sm font-medium text-gray-700">选择图片</h2>
-              <ImagePicker
-                onImageSelect={handleImageSelect}
-                disabled={isLoading}
-              />
+              <h2 className="mb-3 text-sm font-medium text-gray-700">
+                {isVideo ? '选择视频' : '选择图片'}
+              </h2>
+              {isVideo ? (
+                <VideoPicker
+                  onVideoSelect={handleVideoSelect}
+                  disabled={isLoading}
+                />
+              ) : (
+                <ImagePicker
+                  onImageSelect={handleImageSelect}
+                  disabled={isLoading}
+                />
+              )}
             </section>
 
             {/* 任务选择 */}
@@ -287,10 +341,10 @@ const HomePage = () => {
           <div className="mx-auto max-w-lg">
             <button
               onClick={handleAnalyze}
-              disabled={!imageBase64 || isLoading}
+              disabled={!canSubmit || isLoading}
               className={`
                 flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-medium transition-all
-                ${imageBase64 && !isLoading
+                ${canSubmit && !isLoading
                   ? `${brandColor.bg} text-white shadow-lg ${brandColor.shadow} active:scale-[0.98]`
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }
@@ -301,12 +355,12 @@ const HomePage = () => {
               {isLoading ? (
                 <>
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  <span>识别中...</span>
+                  <span>{isVideo ? '处理中...' : '识别中...'}</span>
                 </>
               ) : (
                 <>
-                  {isCloud ? <Cloud size={20} /> : <Send size={20} />}
-                  <span>{isCloud ? '云端识别' : '本地识别'}</span>
+                  {isVideo ? <Video size={20} /> : isCloud ? <Cloud size={20} /> : <Send size={20} />}
+                  <span>{isVideo ? '开始分析' : isCloud ? '云端识别' : '本地识别'}</span>
                 </>
               )}
             </button>

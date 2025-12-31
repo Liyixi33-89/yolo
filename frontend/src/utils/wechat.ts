@@ -180,16 +180,21 @@ export const initWechatSDK = async (): Promise<boolean> => {
  * 微信录音类
  */
 export class WechatRecorder {
-  private localId: string | null = null;
+  private _localId: string | null = null;
   private isRecording = false;
   private onRecordEnd?: (localId: string) => void;
+
+  // 获取最后录音的 localId
+  get localId(): string | null {
+    return this._localId;
+  }
 
   constructor() {
     // 监听录音自动停止事件（超过60秒会自动停止）
     if (window.wx) {
       window.wx.onVoiceRecordEnd({
         complete: (res) => {
-          this.localId = res.localId;
+          this._localId = res.localId;
           this.isRecording = false;
           this.onRecordEnd?.(res.localId);
         },
@@ -229,7 +234,7 @@ export class WechatRecorder {
 
       window.wx.stopRecord({
         success: (res) => {
-          this.localId = res.localId;
+          this._localId = res.localId;
           this.isRecording = false;
           resolve(res.localId);
         },
