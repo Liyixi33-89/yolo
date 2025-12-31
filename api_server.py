@@ -1122,7 +1122,7 @@ async def tencent_cloud_status():
         "data": {
             "sdk_installed": TENCENT_CLOUD_AVAILABLE,
             "configured": TencentCloudConfig.is_configured(),
-            "region": TencentCloudConfig.REGION,
+            "region": TencentCloudConfig.get_region(),
             "message": "腾讯云 API 已就绪" if (TENCENT_CLOUD_AVAILABLE and TencentCloudConfig.is_configured()) else "请配置腾讯云密钥"
         }
     })
