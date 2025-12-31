@@ -1,18 +1,46 @@
-import { useState, useRef, useCallback } from 'react';
-import { Camera, Image, X } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Camera, Image, X, RefreshCw, AlertCircle } from 'lucide-react';
 
 interface ImagePickerProps {
   onImageSelect: (base64: string) => void;
   disabled?: boolean;
 }
 
+// 摄像头朝向类型
+type FacingMode = 'user' | 'environment';
+
 const ImagePicker = ({ onImageSelect, disabled = false }: ImagePickerProps) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isCameraMode, setIsCameraMode] = useState(false);
+  const [facingMode, setFacingMode] = useState<FacingMode>('environment');
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isCameraSupported, setIsCameraSupported] = useState(true);
+  const [isHttps, setIsHttps] = useState(true);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // 检测环境
+  useEffect(() => {
+    // 检测是否支持摄像头 API
+    const hasMediaDevices = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    setIsCameraSupported(hasMediaDevices);
+    
+    // 检测是否是 HTTPS 或 localhost
+    const isSecure = window.location.protocol === 'https:' || 
+                     window.location.hostname === 'localhost' ||
+                     window.location.hostname === '127.0.0.1';
+    setIsHttps(isSecure);
+    
+    console.log('[ImagePicker] 环境检测:', { 
+      hasMediaDevices, 
+      isSecure, 
+      protocol: window.location.protocol,
+      hostname: window.location.hostname 
+    });
+  }, []);
 
   // 处理文件选择
   const handleFileChange = useCallback(
@@ -69,24 +97,104 @@ const ImagePicker = ({ onImageSelect, disabled = false }: ImagePickerProps) => {
     });
   };
 
-  // 打开相机
-  const handleOpenCamera = useCallback(async () => {
+  // 启动摄像头流
+  const startCameraStream = useCallback(async (facing: FacingMode) => {
+    // 先停止之前的流
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+    }
+    
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: { 
+          facingMode: facing,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
+      
       streamRef.current = stream;
+      
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        await videoRef.current.play();
       }
-      setIsCameraMode(true);
+      
+      setCameraError(null);
+      return true;
     } catch (error) {
-      console.error('无法访问摄像头:', error);
-      alert('无法访问摄像头，请检查权限设置');
+      console.error('[ImagePicker] 摄像头启动失败:', error);
+      
+      // 解析错误类型
+      let errorMessage = '无法访问摄像头';
+      
+      if (error instanceof DOMException) {
+        switch (error.name) {
+          case 'NotAllowedError':
+            errorMessage = '摄像头权限被拒绝，请在浏览器设置中允许访问摄像头';
+            break;
+          case 'NotFoundError':
+            errorMessage = '未找到摄像头设备';
+            break;
+          case 'NotReadableError':
+            errorMessage = '摄像头被其他应用占用';
+            break;
+          case 'OverconstrainedError':
+            errorMessage = '摄像头不支持所请求的配置';
+            break;
+          case 'SecurityError':
+            errorMessage = '安全限制：需要 HTTPS 环境才能使用摄像头';
+            break;
+          default:
+            errorMessage = `摄像头错误: ${error.message}`;
+        }
+      }
+      
+      setCameraError(errorMessage);
+      return false;
     }
   }, []);
+
+  // 打开相机
+  const handleOpenCamera = useCallback(async () => {
+    // 检查环境
+    if (!isCameraSupported) {
+      setCameraError('您的浏览器不支持摄像头功能');
+      return;
+    }
+    
+    if (!isHttps) {
+      setCameraError('线上环境需要 HTTPS 才能使用摄像头。本地开发请使用 localhost');
+      return;
+    }
+    
+    setIsCameraMode(true);
+    setCameraError(null);
+    
+    const success = await startCameraStream(facingMode);
+    if (!success) {
+      // 如果后置摄像头失败，尝试前置摄像头
+      if (facingMode === 'environment') {
+        console.log('[ImagePicker] 后置摄像头失败，尝试前置摄像头');
+        const frontSuccess = await startCameraStream('user');
+        if (frontSuccess) {
+          setFacingMode('user');
+        }
+      }
+    }
+  }, [isCameraSupported, isHttps, facingMode, startCameraStream]);
+
+  // 切换前后摄像头
+  const handleSwitchCamera = useCallback(async () => {
+    const newFacing: FacingMode = facingMode === 'environment' ? 'user' : 'environment';
+    console.log('[ImagePicker] 切换摄像头:', newFacing);
+    
+    const success = await startCameraStream(newFacing);
+    if (success) {
+      setFacingMode(newFacing);
+    }
+  }, [facingMode, startCameraStream]);
 
   // 关闭相机
   const handleCloseCamera = useCallback(() => {
@@ -95,6 +203,7 @@ const ImagePicker = ({ onImageSelect, disabled = false }: ImagePickerProps) => {
       streamRef.current = null;
     }
     setIsCameraMode(false);
+    setCameraError(null);
   }, []);
 
   // 拍照
@@ -125,6 +234,12 @@ const ImagePicker = ({ onImageSelect, disabled = false }: ImagePickerProps) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // 如果是前置摄像头，需要水平翻转
+    if (facingMode === 'user') {
+      ctx.translate(width, 0);
+      ctx.scale(-1, 1);
+    }
+
     ctx.drawImage(video, 0, 0, width, height);
     const base64 = canvas.toDataURL('image/jpeg', 0.8);
     
@@ -133,7 +248,7 @@ const ImagePicker = ({ onImageSelect, disabled = false }: ImagePickerProps) => {
     setPreviewUrl(base64);
     onImageSelect(base64);
     handleCloseCamera();
-  }, [onImageSelect, handleCloseCamera]);
+  }, [facingMode, onImageSelect, handleCloseCamera]);
 
   // 清除图片
   const handleClear = useCallback(() => {
@@ -141,6 +256,15 @@ const ImagePicker = ({ onImageSelect, disabled = false }: ImagePickerProps) => {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  }, []);
+
+  // 组件卸载时清理摄像头
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
   }, []);
 
   return (
@@ -161,38 +285,76 @@ const ImagePicker = ({ onImageSelect, disabled = false }: ImagePickerProps) => {
       {/* 相机模式 */}
       {isCameraMode && (
         <div className="fixed inset-0 z-50 flex flex-col bg-black">
+          {/* 顶部工具栏 */}
           <div className="flex items-center justify-between p-4">
             <button
               onClick={handleCloseCamera}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white transition-colors hover:bg-white/30"
               aria-label="关闭相机"
               tabIndex={0}
             >
               <X size={24} />
             </button>
-            <span className="text-white">拍摄照片</span>
-            <div className="w-10" />
-          </div>
-          
-          <div className="flex-1 flex items-center justify-center">
-            <video
-              ref={videoRef}
-              className="max-h-full max-w-full"
-              playsInline
-              autoPlay
-              muted
-            />
-          </div>
-          
-          <div className="flex justify-center p-6">
+            
+            <span className="text-white font-medium">
+              {facingMode === 'environment' ? '后置摄像头' : '前置摄像头'}
+            </span>
+            
+            {/* 切换摄像头按钮 */}
             <button
-              onClick={handleCapture}
-              className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-white/20"
-              aria-label="拍照"
+              onClick={handleSwitchCamera}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white transition-colors hover:bg-white/30"
+              aria-label="切换摄像头"
               tabIndex={0}
             >
-              <div className="h-12 w-12 rounded-full bg-white" />
+              <RefreshCw size={20} />
             </button>
+          </div>
+          
+          {/* 摄像头预览区域 */}
+          <div className="flex-1 flex items-center justify-center relative">
+            {cameraError ? (
+              // 错误提示
+              <div className="flex flex-col items-center gap-4 p-6 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500/20">
+                  <AlertCircle size={32} className="text-red-400" />
+                </div>
+                <p className="text-white text-lg">{cameraError}</p>
+                <button
+                  onClick={handleCloseCamera}
+                  className="mt-4 rounded-lg bg-white/20 px-6 py-2 text-white transition-colors hover:bg-white/30"
+                >
+                  关闭
+                </button>
+              </div>
+            ) : (
+              <video
+                ref={videoRef}
+                className={`max-h-full max-w-full ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+                playsInline
+                autoPlay
+                muted
+              />
+            )}
+          </div>
+          
+          {/* 底部拍照按钮 */}
+          {!cameraError && (
+            <div className="flex justify-center p-6">
+              <button
+                onClick={handleCapture}
+                className="flex h-18 w-18 items-center justify-center rounded-full border-4 border-white bg-white/20 transition-transform active:scale-95"
+                aria-label="拍照"
+                tabIndex={0}
+              >
+                <div className="h-14 w-14 rounded-full bg-white" />
+              </button>
+            </div>
+          )}
+          
+          {/* 提示信息 */}
+          <div className="pb-4 text-center text-sm text-white/60">
+            {!cameraError && '点击上方按钮切换前后摄像头'}
           </div>
         </div>
       )}
@@ -233,15 +395,33 @@ const ImagePicker = ({ onImageSelect, disabled = false }: ImagePickerProps) => {
             {/* 拍照按钮 */}
             <button
               onClick={handleOpenCamera}
-              disabled={disabled}
-              className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-white p-6 transition-colors hover:border-primary-500 hover:bg-primary-50 disabled:opacity-50"
+              disabled={disabled || !isCameraSupported}
+              className={`
+                flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed bg-white p-6 transition-colors disabled:opacity-50
+                ${isCameraSupported && isHttps 
+                  ? 'border-gray-300 hover:border-primary-500 hover:bg-primary-50' 
+                  : 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                }
+              `}
               aria-label="拍摄照片"
               tabIndex={0}
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">
+              <div className={`flex h-12 w-12 items-center justify-center rounded-full ${
+                isCameraSupported && isHttps ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
+              }`}>
                 <Camera size={24} />
               </div>
-              <span className="text-sm font-medium text-gray-700">拍摄照片</span>
+              <span className={`text-sm font-medium ${
+                isCameraSupported && isHttps ? 'text-gray-700' : 'text-gray-400'
+              }`}>
+                拍摄照片
+              </span>
+              {/* 环境不支持时的提示 */}
+              {(!isCameraSupported || !isHttps) && (
+                <span className="text-xs text-gray-400">
+                  {!isCameraSupported ? '不支持' : '需要HTTPS'}
+                </span>
+              )}
             </button>
           </div>
           
