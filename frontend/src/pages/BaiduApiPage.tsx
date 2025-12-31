@@ -1,10 +1,18 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { 
   Calculator, BookOpen, FileCheck, Scissors, 
   Mic, Search, ImageIcon, Upload, Play, Square,
-  ArrowLeft, RotateCcw, Loader2, ChevronDown
+  ArrowLeft, RotateCcw, Loader2, ChevronDown, AlertTriangle
 } from 'lucide-react';
 import { ImagePicker, Loading } from '../components';
+import { 
+  getRecordingCapability, 
+  getRecordingTip, 
+  initWechatSDK,
+  WechatRecorder,
+  isWechatBrowser,
+  RecordingCapability
+} from '../utils/wechat';
 import {
   recognizeFormula,
   recognizeDictPen,
@@ -216,6 +224,27 @@ const BaiduApiPage = () => {
   // 录音相关
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const wechatRecorderRef = useRef<WechatRecorder | null>(null);
+  const [recordingCapability, setRecordingCapability] = useState<RecordingCapability>('none');
+  const [recordingTip, setRecordingTip] = useState<string>('');
+  const [wechatReady, setWechatReady] = useState(false);
+
+  // 初始化录音能力检测
+  useEffect(() => {
+    const capability = getRecordingCapability();
+    setRecordingCapability(capability);
+    setRecordingTip(getRecordingTip());
+
+    // 如果是微信环境，初始化微信 SDK
+    if (capability === 'wechat') {
+      initWechatSDK().then((success) => {
+        if (success) {
+          wechatRecorderRef.current = new WechatRecorder();
+          setWechatReady(true);
+        }
+      });
+    }
+  }, []);
 
   // 处理图片选择
   const handleImageSelect = useCallback((base64: string) => {
@@ -243,9 +272,45 @@ const BaiduApiPage = () => {
     setShowResult(false);
   }, []);
 
-  // 开始录音
+  // 开始录音（支持标准和微信两种模式）
   const handleStartRecording = useCallback(async () => {
+    // 检查录音能力
+    if (recordingCapability === 'none') {
+      setError('当前环境不支持录音，请使用 HTTPS 访问或在微信内打开');
+      return;
+    }
+
     try {
+      // 微信环境使用微信 SDK 录音
+      if (recordingCapability === 'wechat' && wechatRecorderRef.current) {
+        await wechatRecorderRef.current.start();
+        setIsRecording(true);
+        // 微信录音最长60秒，设置自动停止回调
+        wechatRecorderRef.current.setOnRecordEnd(async (localId) => {
+          setIsRecording(false);
+          // 微信录音需要上传到微信服务器，然后通过后端下载
+          try {
+            const serverId = await wechatRecorderRef.current!.upload(localId);
+            // 调用后端接口获取音频数据
+            const response = await fetch('/api/wechat/voice/download', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ serverId }),
+            });
+            const result = await response.json();
+            if (result.success && result.data?.audioBase64) {
+              setAudioBase64(result.data.audioBase64);
+            } else {
+              setError('获取录音数据失败');
+            }
+          } catch (err) {
+            setError('上传录音失败');
+          }
+        });
+        return;
+      }
+
+      // 标准模式使用 getUserMedia
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -271,17 +336,46 @@ const BaiduApiPage = () => {
       mediaRecorder.start();
       setIsRecording(true);
     } catch (err) {
-      setError('无法访问麦克风，请确保已授权');
+      setError('无法访问麦克风，请确保已授权或使用 HTTPS 访问');
     }
-  }, []);
+  }, [recordingCapability]);
 
   // 停止录音
-  const handleStopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && isRecording) {
+  const handleStopRecording = useCallback(async () => {
+    if (!isRecording) return;
+
+    // 微信环境
+    if (recordingCapability === 'wechat' && wechatRecorderRef.current) {
+      try {
+        const localId = await wechatRecorderRef.current.stop();
+        setIsRecording(false);
+        // 上传到微信服务器
+        const serverId = await wechatRecorderRef.current.upload(localId);
+        // 调用后端接口获取音频数据
+        const response = await fetch('/api/wechat/voice/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serverId }),
+        });
+        const result = await response.json();
+        if (result.success && result.data?.audioBase64) {
+          setAudioBase64(result.data.audioBase64);
+        } else {
+          setError('获取录音数据失败');
+        }
+      } catch (err) {
+        setError('停止录音失败');
+        setIsRecording(false);
+      }
+      return;
+    }
+
+    // 标准模式
+    if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
-  }, [isRecording]);
+  }, [isRecording, recordingCapability]);
 
   // 执行 API 调用
   const handleAnalyze = useCallback(async () => {
@@ -692,8 +786,24 @@ const BaiduApiPage = () => {
                     )}
                   </button>
                   <p className="text-sm text-gray-500">
-                    {isRecording ? '正在录音，点击停止...' : '点击开始录音'}
+                    {isRecording ? '正在录音，点击停止...' : recordingTip}
                   </p>
+                  {recordingCapability === 'none' && (
+                    <div className="mt-2 flex items-center gap-2 rounded-lg bg-yellow-50 px-4 py-2 text-sm text-yellow-700">
+                      <AlertTriangle className="h-4 w-4" />
+                      <span>
+                        {isWechatBrowser() 
+                          ? '微信 SDK 初始化中...' 
+                          : '请使用 HTTPS 访问或在微信内打开'}
+                      </span>
+                    </div>
+                  )}
+                  {recordingCapability === 'wechat' && !wechatReady && (
+                    <div className="mt-2 flex items-center gap-2 rounded-lg bg-blue-50 px-4 py-2 text-sm text-blue-700">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>正在初始化微信录音...</span>
+                    </div>
+                  )}
                   {audioBase64 && !isRecording && (
                     <div className="rounded-lg bg-green-50 px-4 py-2 text-sm text-green-600">
                       ✓ 音频已录制完成
