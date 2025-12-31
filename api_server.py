@@ -190,9 +190,20 @@ class BaiduAIConfig:
     
     @classmethod
     def get_face_client(cls):
-        """获取百度人脸识别客户端"""
+        """获取百度人脸识别客户端 - 使用独立的人脸识别应用配置"""
         if not BAIDU_AI_AVAILABLE:
             raise HTTPException(status_code=500, detail="百度 AI SDK 未安装")
+        
+        # 优先使用独立的人脸识别应用配置
+        face_config = KEYS_CONFIG.get("baidu_face", {})
+        if face_config.get("app_id") and face_config.get("api_key") and face_config.get("secret_key"):
+            return AipFace(
+                face_config["app_id"],
+                face_config["api_key"],
+                face_config["secret_key"]
+            )
+        
+        # 备选：使用通用百度配置
         if not cls.is_configured():
             raise HTTPException(status_code=500, detail="百度 AI 密钥未配置")
         return AipFace(cls.get_app_id(), cls.get_api_key(), cls.get_secret_key())
