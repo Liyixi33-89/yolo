@@ -196,7 +196,7 @@ const HomePage = () => {
   };
 
   return (
-    <div className="flex min-h-full flex-col bg-gray-50">
+    <div className="flex h-full flex-col bg-gray-50">
       {/* 顶部导航栏 */}
       <header className="sticky top-0 z-10 flex items-center justify-between bg-white px-4 py-3 shadow-sm">
         {showResult ? (
