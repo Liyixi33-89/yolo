@@ -91,7 +91,7 @@ check_all_apis() {
     
     # 1. 健康检查
     log_info "检查服务健康状态..."
-    if ! check_api "健康检查" "${API_BASE}/api/health"; then
+    if ! check_api "健康检查" "${API_BASE}/health"; then
         log_error "服务未正常启动，请检查日志"
         return 1
     fi
@@ -100,7 +100,7 @@ check_all_apis() {
     log_info "检查各平台 API 状态..."
     
     # 2. YOLO 本地检测
-    check_api "YOLO 本地检测" "${API_BASE}/api/health" || ((failed++))
+    check_api "YOLO 本地检测" "${API_BASE}/api/status" || ((failed++))
     
     # 3. 腾讯云 API
     check_api "腾讯云 API" "${API_BASE}/api/tencent/status" || ((failed++))
