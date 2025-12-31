@@ -40,11 +40,18 @@ async def baidu_free_ocr(request: BaiduFreeOcrRequest):
     try:
         logger.info(f"[BaiduFreeOCR] 收到请求，API类型: {request.api_type}")
         
+        # 检查图片数据是否存在
+        if not request.image_base64:
+            raise HTTPException(status_code=400, detail="缺少图片数据 (image_base64)")
+        
         config = BaiduFreeApiConfig.get_ocr_config()
+        logger.info(f"[BaiduFreeOCR] OCR配置状态: app_id={bool(config.get('app_id'))}, api_key={bool(config.get('api_key'))}, secret_key={bool(config.get('secret_key'))}")
+        
         if not BaiduFreeApiConfig.is_ocr_configured():
-            raise HTTPException(status_code=500, detail="百度 OCR API 未配置")
+            raise HTTPException(status_code=500, detail="百度 OCR API 未配置，请检查 keys.json 中的 baidu_ocr 配置")
         
         access_token = get_baidu_access_token(config["api_key"], config["secret_key"])
+        logger.info(f"[BaiduFreeOCR] 成功获取 access_token")
         
         # 处理 Base64 数据
         image_base64 = request.image_base64
