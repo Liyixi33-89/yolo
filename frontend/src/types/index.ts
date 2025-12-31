@@ -156,16 +156,6 @@ export const TASK_GROUPS: TaskGroup[] = [
     tasks: YOLO_TASKS,
   },
   {
-    id: 'tencent',
-    name: '腾讯云 AI',
-    description: '使用腾讯云视觉 API 进行分析',
-    icon: '☁️',
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
-    tasks: TENCENT_TASKS,
-  },
-  {
     id: 'baidu',
     name: '百度 AI',
     description: '使用百度AI开放平台进行分析',
@@ -174,6 +164,16 @@ export const TASK_GROUPS: TaskGroup[] = [
     bgColor: 'bg-red-50',
     borderColor: 'border-red-200',
     tasks: BAIDU_TASKS,
+  },
+  {
+    id: 'tencent',
+    name: '腾讯云 AI',
+    description: '使用腾讯云视觉 API 进行分析',
+    icon: '☁️',
+    color: 'text-blue-600',
+    bgColor: 'bg-blue-50',
+    borderColor: 'border-blue-200',
+    tasks: TENCENT_TASKS,
   },
 ];
 
