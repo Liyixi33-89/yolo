@@ -1,0 +1,16 @@
+{
+  "_comment": "API 密钥配置文件 - 请复制此文件为 keys.json 并填入真实密钥",
+  "_warning": "keys.json 文件不要提交到 Git！",
+  
+  "tencent": {
+    "secret_id": "your_tencent_secret_id",
+    "secret_key": "your_tencent_secret_key",
+    "region": "ap-guangzhou"
+  },
+  
+  "baidu": {
+    "app_id": "your_baidu_app_id",
+    "api_key": "your_baidu_api_key",
+    "secret_key": "your_baidu_secret_key"
+  }
+}

@@ -59,3 +59,8 @@ temp/
 uploads/
 output/
 results/
+
+# 密钥配置文件（重要：不要提交到 Git）
+.env.keys
+keys.json
+*.keys

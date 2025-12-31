@@ -23,6 +23,24 @@ import os
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ==================== 密钥配置加载 ====================
+def load_keys_config():
+    """从 keys.json 配置文件加载 API 密钥"""
+    keys_file = Path(__file__).parent / "keys.json"
+    if keys_file.exists():
+        try:
+            with open(keys_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                logger.info(f"已从 {keys_file} 加载密钥配置")
+                return config
+        except Exception as e:
+            logger.warning(f"加载密钥配置文件失败: {e}")
+    return {}
+
+# 加载密钥配置
+KEYS_CONFIG = load_keys_config()
+
 from ultralytics import YOLO
 
 # 腾讯云 SDK
@@ -132,21 +150,28 @@ class BaiduAIRequest(BaseModel):
 
 # ==================== 百度 AI 配置 ====================
 class BaiduAIConfig:
-    """百度 AI 配置管理"""
+    """百度 AI 配置管理 - 优先从 keys.json 读取，其次从环境变量读取"""
     
     @classmethod
     def get_app_id(cls) -> str:
         """动态获取 APP_ID"""
+        # 优先从配置文件读取
+        if KEYS_CONFIG.get("baidu", {}).get("app_id"):
+            return KEYS_CONFIG["baidu"]["app_id"]
         return os.environ.get("BAIDU_APP_ID", "")
     
     @classmethod
     def get_api_key(cls) -> str:
         """动态获取 API_KEY"""
+        if KEYS_CONFIG.get("baidu", {}).get("api_key"):
+            return KEYS_CONFIG["baidu"]["api_key"]
         return os.environ.get("BAIDU_API_KEY", "")
     
     @classmethod
     def get_secret_key(cls) -> str:
         """动态获取 SECRET_KEY"""
+        if KEYS_CONFIG.get("baidu", {}).get("secret_key"):
+            return KEYS_CONFIG["baidu"]["secret_key"]
         return os.environ.get("BAIDU_SECRET_KEY", "")
     
     @classmethod
@@ -175,16 +200,33 @@ class BaiduAIConfig:
 
 # ==================== 腾讯云配置 ====================
 class TencentCloudConfig:
-    """腾讯云配置管理"""
-    # 从环境变量读取密钥（安全方式）
-    SECRET_ID = os.environ.get("TENCENT_SECRET_ID", "")
-    SECRET_KEY = os.environ.get("TENCENT_SECRET_KEY", "")
-    REGION = os.environ.get("TENCENT_REGION", "ap-guangzhou")
+    """腾讯云配置管理 - 优先从 keys.json 读取，其次从环境变量读取"""
+    
+    @classmethod
+    def get_secret_id(cls) -> str:
+        """动态获取 SECRET_ID"""
+        if KEYS_CONFIG.get("tencent", {}).get("secret_id"):
+            return KEYS_CONFIG["tencent"]["secret_id"]
+        return os.environ.get("TENCENT_SECRET_ID", "")
+    
+    @classmethod
+    def get_secret_key(cls) -> str:
+        """动态获取 SECRET_KEY"""
+        if KEYS_CONFIG.get("tencent", {}).get("secret_key"):
+            return KEYS_CONFIG["tencent"]["secret_key"]
+        return os.environ.get("TENCENT_SECRET_KEY", "")
+    
+    @classmethod
+    def get_region(cls) -> str:
+        """动态获取 REGION"""
+        if KEYS_CONFIG.get("tencent", {}).get("region"):
+            return KEYS_CONFIG["tencent"]["region"]
+        return os.environ.get("TENCENT_REGION", "ap-guangzhou")
     
     @classmethod
     def is_configured(cls) -> bool:
         """检查是否已配置"""
-        return bool(cls.SECRET_ID and cls.SECRET_KEY)
+        return bool(cls.get_secret_id() and cls.get_secret_key())
     
     @classmethod
     def get_client(cls):
@@ -192,14 +234,14 @@ class TencentCloudConfig:
         if not TENCENT_CLOUD_AVAILABLE:
             raise HTTPException(status_code=500, detail="腾讯云 SDK 未安装")
         if not cls.is_configured():
-            raise HTTPException(status_code=500, detail="腾讯云密钥未配置，请设置环境变量 TENCENT_SECRET_ID 和 TENCENT_SECRET_KEY")
+            raise HTTPException(status_code=500, detail="腾讯云密钥未配置，请在 keys.json 中配置或设置环境变量")
         
-        cred = credential.Credential(cls.SECRET_ID, cls.SECRET_KEY)
+        cred = credential.Credential(cls.get_secret_id(), cls.get_secret_key())
         httpProfile = HttpProfile()
         httpProfile.endpoint = "tiia.tencentcloudapi.com"
         clientProfile = ClientProfile()
         clientProfile.httpProfile = httpProfile
-        client = tiia_client.TiiaClient(cred, cls.REGION, clientProfile)
+        client = tiia_client.TiiaClient(cred, cls.get_region(), clientProfile)
         return client
 
 
@@ -1532,6 +1574,7 @@ if __name__ == "__main__":
     print("API 文档: http://localhost:8000/docs")
     print("支持 JSON 请求，无大小限制")
     print("=" * 60)
+    print(f"密钥配置文件: {'已加载' if KEYS_CONFIG else '未找到 (使用环境变量)'}")
     print(f"腾讯云 SDK: {'已安装' if TENCENT_CLOUD_AVAILABLE else '未安装'}")
     print(f"腾讯云配置: {'已配置' if TencentCloudConfig.is_configured() else '未配置'}")
     print(f"百度 AI SDK: {'已安装' if BAIDU_AI_AVAILABLE else '未安装'}")
