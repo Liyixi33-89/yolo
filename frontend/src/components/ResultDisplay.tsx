@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { Play, Pause, Download } from 'lucide-react';
+import { useRef } from 'react';
+import { Download } from 'lucide-react';
 import { TaskType, getTaskConfig, isTencentTask, isBaiduTask, isVideoTask } from '../types';
 import {
   DetectionData,
@@ -32,20 +32,8 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
   const isBaidu = isBaiduTask(task);
   const isVideo = isVideoTask(task);
   
-  // 视频播放状态
-  const [isPlaying, setIsPlaying] = useState(false);
+  // 视频播放引用
   const videoRef = useRef<HTMLVideoElement>(null);
-  
-  // 切换视频播放状态
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (isPlaying) {
-      videoRef.current.pause();
-    } else {
-      videoRef.current.play();
-    }
-    setIsPlaying(!isPlaying);
-  };
   
   // 下载视频
   const handleDownloadVideo = () => {
@@ -1162,7 +1150,6 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
                 ref={videoRef}
                 src={annotatedVideo}
                 className="w-full"
-                onEnded={() => setIsPlaying(false)}
                 playsInline
                 controls
               />
