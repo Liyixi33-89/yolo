@@ -1304,41 +1304,12 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
     );
   };
 
+  // 调试日志
+  console.log('[ResultDisplay] isVideo:', isVideo, 'annotatedVideo:', annotatedVideo);
+
   return (
     <div className="w-full space-y-4">
-      {/* 标注视频 */}
-      {isVideo && annotatedVideo && (
-        <div className="relative rounded-xl overflow-hidden bg-black">
-          <video
-            ref={videoRef}
-            src={annotatedVideo}
-            className="w-full"
-            onEnded={() => setIsPlaying(false)}
-            playsInline
-            controls={false}
-          />
-          {/* 播放控制 */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <button
-              onClick={togglePlay}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-black/50 text-white transition-transform hover:scale-110"
-              aria-label={isPlaying ? '暂停' : '播放'}
-            >
-              {isPlaying ? <Pause size={32} /> : <Play size={32} className="ml-1" />}
-            </button>
-          </div>
-          {/* 下载按钮 */}
-          <button
-            onClick={handleDownloadVideo}
-            className="absolute top-2 right-2 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
-            aria-label="下载视频"
-          >
-            <Download size={20} />
-          </button>
-        </div>
-      )}
-      
-      {/* 标注图像 */}
+      {/* 标注图像（非视频任务时显示） */}
       {!isVideo && annotatedImage && (
         <div className="image-container">
           <img

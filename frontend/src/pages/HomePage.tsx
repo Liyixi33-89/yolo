@@ -168,14 +168,17 @@ const HomePage = () => {
         // 视频动作捕获
         case 'video_pose':
           response = await videoPoseEstimation(videoBase64!, 0.25, 2, true);
+          console.log('[HomePage] video_pose response:', response.data);
           setResult(response.data);
           // 处理视频URL - 如果是相对路径，拼接完整URL
           if (response.data.annotated_video) {
             const videoUrl = response.data.annotated_video.startsWith('/') 
               ? `${API_BASE_URL}${response.data.annotated_video}` 
               : response.data.annotated_video;
+            console.log('[HomePage] Setting annotatedVideo:', videoUrl);
             setAnnotatedVideo(videoUrl);
           } else {
+            console.log('[HomePage] No annotated_video in response');
             setAnnotatedVideo(null);
           }
           break;
