@@ -29,6 +29,7 @@ import {
   BaiduDetectData,
   BaiduFaceData,
   BaiduCarData,
+  API_BASE_URL,
   VideoPoseData,
 } from '../services/api';
 
@@ -168,7 +169,15 @@ const HomePage = () => {
         case 'video_pose':
           response = await videoPoseEstimation(videoBase64!, 0.25, 2, true);
           setResult(response.data);
-          setAnnotatedVideo(response.data.annotated_video || null);
+          // 处理视频URL - 如果是相对路径，拼接完整URL
+          if (response.data.annotated_video) {
+            const videoUrl = response.data.annotated_video.startsWith('/') 
+              ? `${API_BASE_URL}${response.data.annotated_video}` 
+              : response.data.annotated_video;
+            setAnnotatedVideo(videoUrl);
+          } else {
+            setAnnotatedVideo(null);
+          }
           break;
 
         // 腾讯云检测

@@ -5,9 +5,11 @@ YOLO11 后端 API 服务
 模块化版本 - 代码已拆分到 api/ 目录下的各个模块
 """
 import logging
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +47,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 创建静态文件目录（用于存储处理后的视频）
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+VIDEO_DIR = os.path.join(STATIC_DIR, "videos")
+os.makedirs(VIDEO_DIR, exist_ok=True)
+
+# 挂载静态文件服务
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 # ==================== 注册路由 ====================

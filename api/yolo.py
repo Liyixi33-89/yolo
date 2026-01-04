@@ -630,12 +630,25 @@ async def video_pose_estimation(request: VideoPoseRequest):
                 }
             }
             
-            # 8. 返回标注视频
+            # 8. 返回标注视频 - 使用静态文件URL而非base64
             if request.return_video and temp_output_path:
-                with open(temp_output_path, 'rb') as f:
-                    video_bytes = f.read()
-                video_base64 = base64.b64encode(video_bytes).decode('utf-8')
-                response_data["data"]["annotated_video"] = f"data:video/mp4;base64,{video_base64}"
+                import uuid
+                import shutil
+                
+                # 生成唯一文件名
+                video_filename = f"pose_{uuid.uuid4().hex[:12]}.mp4"
+                
+                # 获取静态文件目录路径
+                static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "videos")
+                os.makedirs(static_dir, exist_ok=True)
+                
+                # 复制视频到静态目录
+                static_video_path = os.path.join(static_dir, video_filename)
+                shutil.copy(temp_output_path, static_video_path)
+                
+                # 返回视频URL（相对路径，前端需要拼接完整URL）
+                response_data["data"]["annotated_video"] = f"/static/videos/{video_filename}"
+                logger.info(f"[VideoPose] 视频已保存: {static_video_path}")
             
             return JSONResponse(content=response_data)
         
