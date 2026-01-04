@@ -1040,7 +1040,7 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
       <div className="space-y-3">
         {/* 标注视频播放器 - 最重要，放在最上面 */}
         {annotatedVideo && (
-          <div className="rounded-xl overflow-hidden bg-black shadow-lg">
+          <div className="relative rounded-xl overflow-hidden bg-black shadow-lg">
             <div className="bg-gradient-to-r from-rose-500 to-pink-500 px-4 py-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-white">
@@ -1056,15 +1056,13 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
                 </button>
               </div>
             </div>
-            <div className="relative w-full max-w-2xl mx-auto" style={{ maxHeight: '480px' }}>
-              <video
-                ref={videoRef}
-                src={annotatedVideo}
-                className="w-full h-full object-contain"
-                playsInline
-                controls
-              />
-            </div>
+            <video
+              ref={videoRef}
+              src={annotatedVideo}
+              className="w-full"
+              playsInline
+              controls
+            />
             <div className="bg-gray-900 px-4 py-2 text-center text-xs text-gray-400">
               点击播放查看人物骨架动作追踪效果
             </div>
