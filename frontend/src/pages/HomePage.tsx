@@ -170,12 +170,17 @@ const HomePage = () => {
           response = await videoPoseEstimation(videoBase64!, 0.25, 2, true);
           console.log('[HomePage] video_pose response:', response.data);
           setResult(response.data);
-          // 处理视频URL - 如果是相对路径，拼接完整URL
+          // 处理视频 - 支持两种格式：
+          // 1. URL路径: /static/videos/xxx.mp4 (线上环境，有ffmpeg)
+          // 2. base64: data:video/...;base64,xxx (本地环境，无ffmpeg)
           if (response.data.annotated_video) {
-            const videoUrl = response.data.annotated_video.startsWith('/') 
-              ? `${API_BASE_URL}${response.data.annotated_video}` 
-              : response.data.annotated_video;
-            console.log('[HomePage] Setting annotatedVideo:', videoUrl);
+            let videoUrl = response.data.annotated_video;
+            // 如果是相对路径（以/开头），拼接API_BASE_URL
+            if (videoUrl.startsWith('/')) {
+              videoUrl = `${API_BASE_URL}${videoUrl}`;
+            }
+            // 如果是base64格式（以data:开头），直接使用
+            console.log('[HomePage] Setting annotatedVideo:', videoUrl.substring(0, 100) + '...');
             setAnnotatedVideo(videoUrl);
           } else {
             console.log('[HomePage] No annotated_video in response');

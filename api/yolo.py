@@ -587,30 +587,55 @@ async def video_pose_estimation(request: VideoPoseRequest):
             if request.return_video:
                 out.release()
                 
-                # 使用 ffmpeg 将 AVI 转换为 H.264 编码的 MP4（浏览器可播放）
+                # 检测是否有 ffmpeg
                 import subprocess
+                import shutil
+                
+                ffmpeg_available = False
                 try:
-                    ffmpeg_cmd = [
-                        'ffmpeg', '-y',
-                        '-i', temp_avi_path,
-                        '-c:v', 'libx264',
-                        '-preset', 'fast',
-                        '-crf', '23',
-                        '-pix_fmt', 'yuv420p',
-                        '-movflags', '+faststart',
-                        temp_output_path
-                    ]
-                    subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
-                    logger.info(f"[VideoPose] FFmpeg 转码成功")
-                except subprocess.CalledProcessError as e:
-                    logger.warning(f"[VideoPose] FFmpeg 转码失败: {e.stderr.decode() if e.stderr else str(e)}")
-                    # 如果 ffmpeg 失败，尝试直接使用 OpenCV 输出
-                    import shutil
-                    shutil.copy(temp_avi_path, temp_output_path)
-                except FileNotFoundError:
-                    logger.warning("[VideoPose] FFmpeg 未安装，视频可能无法在浏览器播放")
-                    import shutil
-                    shutil.copy(temp_avi_path, temp_output_path)
+                    subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+                    ffmpeg_available = True
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    ffmpeg_available = False
+                
+                if ffmpeg_available:
+                    # 使用 ffmpeg 将 AVI 转换为 H.264 编码的 MP4（浏览器可播放）
+                    try:
+                        ffmpeg_cmd = [
+                            'ffmpeg', '-y',
+                            '-i', temp_avi_path,
+                            '-c:v', 'libx264',
+                            '-preset', 'fast',
+                            '-crf', '23',
+                            '-pix_fmt', 'yuv420p',
+                            '-movflags', '+faststart',
+                            temp_output_path
+                        ]
+                        subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+                        logger.info(f"[VideoPose] FFmpeg 转码成功")
+                    except subprocess.CalledProcessError as e:
+                        logger.warning(f"[VideoPose] FFmpeg 转码失败: {e.stderr.decode() if e.stderr else str(e)}")
+                        ffmpeg_available = False
+                
+                if not ffmpeg_available:
+                    # FFmpeg 不可用，尝试使用 imageio-ffmpeg
+                    try:
+                        import imageio
+                        logger.info("[VideoPose] 尝试使用 imageio 转码...")
+                        
+                        # 读取 AVI 并重新编码为 MP4
+                        reader = imageio.get_reader(temp_avi_path)
+                        writer = imageio.get_writer(temp_output_path, fps=fps, codec='libx264', 
+                                                   pixelformat='yuv420p', quality=7)
+                        for frame in reader:
+                            writer.append_data(frame)
+                        reader.close()
+                        writer.close()
+                        logger.info("[VideoPose] imageio 转码成功")
+                    except Exception as e:
+                        logger.warning(f"[VideoPose] imageio 转码失败: {e}")
+                        # 最后的备选方案：直接复制 AVI
+                        shutil.copy(temp_avi_path, temp_output_path)
             
             logger.info(f"[VideoPose] 处理完成: {processed_frames}/{total_frames} 帧")
             
@@ -630,25 +655,36 @@ async def video_pose_estimation(request: VideoPoseRequest):
                 }
             }
             
-            # 8. 返回标注视频 - 使用静态文件URL而非base64
+            # 8. 返回标注视频
             if request.return_video and temp_output_path:
                 import uuid
                 import shutil
                 
-                # 生成唯一文件名
-                video_filename = f"pose_{uuid.uuid4().hex[:12]}.mp4"
-                
-                # 获取静态文件目录路径
-                static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "videos")
-                os.makedirs(static_dir, exist_ok=True)
-                
-                # 复制视频到静态目录
-                static_video_path = os.path.join(static_dir, video_filename)
-                shutil.copy(temp_output_path, static_video_path)
-                
-                # 返回视频URL（相对路径，前端需要拼接完整URL）
-                response_data["data"]["annotated_video"] = f"/static/videos/{video_filename}"
-                logger.info(f"[VideoPose] 视频已保存: {static_video_path}")
+                # 检查视频文件是否存在且有内容
+                if os.path.exists(temp_output_path) and os.path.getsize(temp_output_path) > 0:
+                    # 生成唯一文件名
+                    video_filename = f"pose_{uuid.uuid4().hex[:12]}.mp4"
+                    
+                    # 获取静态文件目录路径
+                    static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "videos")
+                    os.makedirs(static_dir, exist_ok=True)
+                    
+                    # 复制视频到静态目录
+                    static_video_path = os.path.join(static_dir, video_filename)
+                    shutil.copy(temp_output_path, static_video_path)
+                    
+                    # 返回视频URL（相对路径，前端需要拼接完整URL）
+                    response_data["data"]["annotated_video"] = f"/static/videos/{video_filename}"
+                    logger.info(f"[VideoPose] 视频已保存: {static_video_path}")
+                else:
+                    # 如果MP4文件不存在，尝试使用AVI文件并返回base64
+                    if temp_avi_path and os.path.exists(temp_avi_path) and os.path.getsize(temp_avi_path) > 0:
+                        with open(temp_avi_path, 'rb') as f:
+                            video_bytes = f.read()
+                        video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+                        # 返回 data URI 格式，浏览器可能不支持 AVI，但可以下载
+                        response_data["data"]["annotated_video"] = f"data:video/x-msvideo;base64,{video_base64}"
+                        logger.info(f"[VideoPose] FFmpeg不可用，返回AVI base64格式")
             
             return JSONResponse(content=response_data)
         
