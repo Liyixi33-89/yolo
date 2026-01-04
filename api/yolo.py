@@ -6,6 +6,8 @@ import logging
 import base64
 import tempfile
 import os
+import time
+import glob
 import cv2
 import numpy as np
 from fastapi import APIRouter, HTTPException
@@ -20,6 +22,61 @@ logger = logging.getLogger(__name__)
 
 # 创建路由器
 router = APIRouter()
+
+# ==================== 视频文件清理 ====================
+
+# 视频文件最大保留时间（秒），默认1小时
+VIDEO_MAX_AGE_SECONDS = 60 * 60  # 1小时
+# 最大保留视频数量
+VIDEO_MAX_COUNT = 50
+
+def cleanup_old_videos(video_dir: str):
+    """
+    清理过期的视频文件
+    - 删除超过 VIDEO_MAX_AGE_SECONDS 的视频
+    - 如果视频数量超过 VIDEO_MAX_COUNT，删除最旧的视频
+    """
+    try:
+        if not os.path.exists(video_dir):
+            return
+        
+        video_files = glob.glob(os.path.join(video_dir, "pose_*.mp4"))
+        if not video_files:
+            return
+        
+        current_time = time.time()
+        files_with_mtime = []
+        
+        for video_path in video_files:
+            try:
+                mtime = os.path.getmtime(video_path)
+                age = current_time - mtime
+                
+                # 删除超过最大保留时间的文件
+                if age > VIDEO_MAX_AGE_SECONDS:
+                    os.remove(video_path)
+                    logger.info(f"[Cleanup] 删除过期视频: {video_path} (已存在 {age/60:.1f} 分钟)")
+                else:
+                    files_with_mtime.append((video_path, mtime))
+            except Exception as e:
+                logger.warning(f"[Cleanup] 处理文件失败 {video_path}: {e}")
+        
+        # 如果剩余文件超过最大数量，删除最旧的
+        if len(files_with_mtime) > VIDEO_MAX_COUNT:
+            # 按修改时间排序（最旧的在前）
+            files_with_mtime.sort(key=lambda x: x[1])
+            files_to_delete = files_with_mtime[:len(files_with_mtime) - VIDEO_MAX_COUNT]
+            
+            for video_path, _ in files_to_delete:
+                try:
+                    os.remove(video_path)
+                    logger.info(f"[Cleanup] 删除多余视频: {video_path}")
+                except Exception as e:
+                    logger.warning(f"[Cleanup] 删除文件失败 {video_path}: {e}")
+        
+        logger.info(f"[Cleanup] 清理完成，当前视频数量: {len(files_with_mtime)}")
+    except Exception as e:
+        logger.error(f"[Cleanup] 清理视频失败: {e}")
 
 
 # ==================== 模型管理 ====================
@@ -668,6 +725,9 @@ async def video_pose_estimation(request: VideoPoseRequest):
                     # 获取静态文件目录路径
                     static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "videos")
                     os.makedirs(static_dir, exist_ok=True)
+                    
+                    # 清理过期视频文件
+                    cleanup_old_videos(static_dir)
                     
                     # 复制视频到静态目录
                     static_video_path = os.path.join(static_dir, video_filename)
