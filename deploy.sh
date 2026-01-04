@@ -79,20 +79,51 @@ check_api() {
     fi
 }
 
+# 等待服务启动（带重试机制）
+wait_for_service() {
+    local max_attempts=30
+    local attempt=1
+    local wait_seconds=2
+    
+    log_info "等待服务启动（最多等待 ${max_attempts} 次，每次 ${wait_seconds} 秒）..."
+    
+    while [ $attempt -le $max_attempts ]; do
+        local http_code=$(curl -s -o /dev/null -w "%{http_code}" "${API_BASE}/health" 2>/dev/null)
+        
+        if [ "$http_code" = "200" ]; then
+            log_success "服务已启动！（第 $attempt 次检查）"
+            return 0
+        fi
+        
+        echo -ne "\r${BLUE}[INFO]${NC} 等待中... (${attempt}/${max_attempts}) HTTP: ${http_code}"
+        sleep $wait_seconds
+        ((attempt++))
+    done
+    
+    echo ""
+    log_error "服务启动超时（等待了 $((max_attempts * wait_seconds)) 秒）"
+    return 1
+}
+
 # 检查所有接口
 check_all_apis() {
     print_header "接口状态检查"
     
     local failed=0
     
-    # 等待服务启动
-    log_info "等待服务启动..."
-    sleep 3
+    # 等待服务启动（带重试）
+    if ! wait_for_service; then
+        log_error "服务未正常启动，请检查日志"
+        log_info "查看日志: pm2 logs yolo-backend --lines 50"
+        return 1
+    fi
     
-    # 1. 健康检查
+    echo ""
+    
+    # 1. 健康检查（此时已确认服务启动）
     log_info "检查服务健康状态..."
     if ! check_api "健康检查" "${API_BASE}/health"; then
-        log_error "服务未正常启动，请检查日志"
+        log_error "服务异常，请检查日志"
         return 1
     fi
     
@@ -169,14 +200,55 @@ build_frontend() {
     log_success "前端构建完成"
 }
 
+# 停止旧进程并确保端口释放
+kill_old_process() {
+    log_info "检查端口 8000 占用情况..."
+    
+    local pid=$(lsof -t -i :8000 2>/dev/null)
+    if [ -n "$pid" ]; then
+        log_warning "端口 8000 被进程 $pid 占用，正在终止..."
+        kill -9 $pid 2>/dev/null || true
+        sleep 2
+        
+        # 再次检查
+        pid=$(lsof -t -i :8000 2>/dev/null)
+        if [ -n "$pid" ]; then
+            log_error "无法释放端口 8000"
+            return 1
+        fi
+        log_success "端口 8000 已释放"
+    else
+        log_info "端口 8000 未被占用"
+    fi
+    return 0
+}
+
 # 重启服务
 restart_service() {
     print_header "重启服务"
     
     cd "$PROJECT_DIR"
     
-    log_info "重启 PM2 服务..."
-    pm2 restart yolo-backend
+    # 先停止服务
+    log_info "停止当前服务..."
+    pm2 stop yolo-backend 2>/dev/null || true
+    
+    # 等待进程完全停止
+    sleep 2
+    
+    # 确保端口释放
+    kill_old_process
+    
+    # 删除旧进程记录
+    log_info "删除旧进程记录..."
+    pm2 delete yolo-backend 2>/dev/null || true
+    
+    # 重新启动服务
+    log_info "启动新服务..."
+    pm2 start "${VENV_DIR}/bin/python" --name yolo-backend -- api_server.py
+    
+    # 保存 PM2 配置
+    pm2 save --force
     
     log_success "服务已重启"
     
