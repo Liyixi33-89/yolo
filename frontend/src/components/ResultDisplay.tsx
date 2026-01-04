@@ -1029,101 +1029,12 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
     }
   };
 
-  // 骨架连接定义（关键点索引）
-  const SKELETON_CONNECTIONS = [
-    [0, 1], [0, 2],     // 鼻子 -> 左眼、右眼
-    [1, 3], [2, 4],     // 眼睛 -> 耳朵
-    [5, 6],             // 左肩 -> 右肩
-    [5, 7], [7, 9],     // 左臂
-    [6, 8], [8, 10],    // 右臂
-    [5, 11], [6, 12],   // 肩膀 -> 髋部
-    [11, 12],           // 左髋 -> 右髋
-    [11, 13], [13, 15], // 左腿
-    [12, 14], [14, 16], // 右腿
-  ];
 
-  // 渲染单人骨架 SVG
-  const renderSkeletonSvg = (keypoints: { name: string; x: number; y: number; confidence: number }[], _width: number, _height: number) => {
-    // 计算缩放比例，使骨架适应容器
-    const validPoints = keypoints.filter(k => k.confidence > 0.3 && k.x > 0 && k.y > 0);
-    if (validPoints.length < 5) return null;
 
-    // 找到边界
-    const xs = validPoints.map(k => k.x);
-    const ys = validPoints.map(k => k.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    
-    const padding = 20;
-    const svgWidth = 150;
-    const svgHeight = 200;
-    
-    // 计算缩放
-    const scaleX = (svgWidth - padding * 2) / Math.max(maxX - minX, 1);
-    const scaleY = (svgHeight - padding * 2) / Math.max(maxY - minY, 1);
-    const scale = Math.min(scaleX, scaleY);
-    
-    // 转换坐标
-    const transformX = (x: number) => (x - minX) * scale + padding;
-    const transformY = (y: number) => (y - minY) * scale + padding;
-
-    return (
-      <svg width={svgWidth} height={svgHeight} className="bg-gray-900 rounded-lg">
-        {/* 绘制骨架线 */}
-        {SKELETON_CONNECTIONS.map(([i, j], idx) => {
-          const p1 = keypoints[i];
-          const p2 = keypoints[j];
-          if (!p1 || !p2 || p1.confidence < 0.3 || p2.confidence < 0.3) return null;
-          if (p1.x <= 0 || p1.y <= 0 || p2.x <= 0 || p2.y <= 0) return null;
-          
-          return (
-            <line
-              key={idx}
-              x1={transformX(p1.x)}
-              y1={transformY(p1.y)}
-              x2={transformX(p2.x)}
-              y2={transformY(p2.y)}
-              stroke="#10b981"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          );
-        })}
-        
-        {/* 绘制关键点 */}
-        {keypoints.map((kp, idx) => {
-          if (kp.confidence < 0.3 || kp.x <= 0 || kp.y <= 0) return null;
-          
-          // 不同部位用不同颜色
-          let color = '#f59e0b'; // 默认黄色
-          if (idx <= 4) color = '#3b82f6'; // 头部-蓝色
-          else if (idx <= 10) color = '#ef4444'; // 上身-红色
-          else color = '#8b5cf6'; // 下身-紫色
-          
-          return (
-            <circle
-              key={idx}
-              cx={transformX(kp.x)}
-              cy={transformY(kp.y)}
-              r="4"
-              fill={color}
-              stroke="#fff"
-              strokeWidth="1"
-            />
-          );
-        })}
-      </svg>
-    );
-  };
 
   // 渲染视频姿态估计结果
   const renderVideoPoseResults = (videoPoseData: VideoPoseData) => {
     const { total_frames, processed_frames, fps, width, height, max_persons_detected, keypoints_data } = videoPoseData;
-
-    // 选取有人物的关键帧用于骨架展示
-    const framesWithPoses = keypoints_data?.filter(f => f.poses.length > 0).slice(0, 6) || [];
 
     return (
       <div className="space-y-3">
@@ -1145,11 +1056,11 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
                 </button>
               </div>
             </div>
-            <div className="relative">
+            <div className="relative w-full max-w-2xl mx-auto" style={{ maxHeight: '480px' }}>
               <video
                 ref={videoRef}
                 src={annotatedVideo}
-                className="w-full"
+                className="w-full h-full object-contain"
                 playsInline
                 controls
               />
@@ -1186,44 +1097,7 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
           </div>
         </div>
 
-        {/* 骨架可视化 */}
-        {framesWithPoses.length > 0 && (
-          <div className="rounded-lg border border-rose-200 bg-white p-3">
-            <h4 className="mb-3 text-sm font-medium text-gray-700">人物骨架可视化</h4>
-            <div className="grid grid-cols-3 gap-2">
-              {framesWithPoses.map((frameData, fIdx) => (
-                <div key={fIdx} className="flex flex-col items-center">
-                  {frameData.poses.slice(0, 1).map((pose, pIdx) => (
-                    <div key={pIdx}>
-                      {renderSkeletonSvg(pose.keypoints, width, height)}
-                    </div>
-                  ))}
-                  <span className="mt-1 text-xs text-gray-500">帧 #{frameData.frame}</span>
-                </div>
-              ))}
-            </div>
-            
-            {/* 图例 */}
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-blue-500"></span>
-                头部
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-red-500"></span>
-                上身
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-purple-500"></span>
-                下身
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-green-500"></span>
-                骨架
-              </span>
-            </div>
-          </div>
-        )}
+
 
         {/* 关键帧数据预览 */}
         {keypoints_data && keypoints_data.length > 0 && (
