@@ -24,11 +24,13 @@ from api import (
     TencentCloudConfig,
     BaiduAIConfig,
     BaiduFreeApiConfig,
+    WechatConfig,
     yolo,
     tencent,
     baidu,
     baidu_free,
     lpr,
+    wechat,
 )
 
 
@@ -73,6 +75,9 @@ app.include_router(baidu_free.router, prefix="/api", tags=["百度免费API"])
 
 # 车牌识别路由
 app.include_router(lpr.router, prefix="/api", tags=["车牌识别"])
+
+# 微信公众号路由
+app.include_router(wechat.router, prefix="/api", tags=["微信公众号"])
 
 
 # ==================== 健康检查和状态 API ====================
@@ -120,6 +125,9 @@ async def api_status():
             },
             "lpr": {
                 "available": HYPERLPR_AVAILABLE
+            },
+            "wechat": {
+                "configured": WechatConfig.is_configured()
             }
         }
     })
@@ -145,6 +153,7 @@ if __name__ == "__main__":
     print(f"百度免费语音: {'已配置' if BaiduFreeApiConfig.is_nlp_configured() else '未配置'}")
     print(f"百度图像搜索: {'已配置' if BaiduFreeApiConfig.is_image_search_configured() else '未配置'}")
     print(f"HyperLPR3 车牌识别: {'已加载' if HYPERLPR_AVAILABLE else '未安装'}")
+    print(f"微信公众号: {'已配置' if WechatConfig.is_configured() else '未配置'}")
     print("=" * 60)
     
     uvicorn.run(app, host="0.0.0.0", port=8000)

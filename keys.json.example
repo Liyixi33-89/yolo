@@ -12,5 +12,12 @@
     "app_id": "your_baidu_app_id",
     "api_key": "your_baidu_api_key",
     "secret_key": "your_baidu_secret_key"
+  },
+
+  "wechat": {
+    "_comment": "微信公众号配置 - 用于 JS-SDK 录音等功能",
+    "_help": "在微信公众平台 (mp.weixin.qq.com) 获取 AppID 和 AppSecret",
+    "app_id": "your_wechat_app_id",
+    "app_secret": "your_wechat_app_secret"
   }
 }

@@ -48,6 +48,8 @@ from . import tencent
 from . import baidu
 from . import baidu_free
 from . import lpr
+from . import wechat
+from .wechat import WechatConfig
 
 __all__ = [
     # 配置
@@ -95,4 +97,6 @@ __all__ = [
     'baidu',
     'baidu_free',
     'lpr',
+    'wechat',
+    'WechatConfig',
 ]
