@@ -412,6 +412,79 @@ async def video_pose_estimation(request: VideoPoseRequest):
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                 out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
             
+# 骨架连接定义（用于手动绘制更清晰的骨架）
+            skeleton_connections = [
+                # 头部
+                (0, 1), (0, 2), (1, 3), (2, 4),  # 鼻子-眼睛-耳朵
+                # 躯干
+                (5, 6),  # 左肩-右肩
+                (5, 11), (6, 12),  # 肩膀-髋部
+                (11, 12),  # 左髋-右髋
+                # 左臂
+                (5, 7), (7, 9),  # 左肩-左肘-左腕
+                # 右臂
+                (6, 8), (8, 10),  # 右肩-右肘-右腕
+                # 左腿
+                (11, 13), (13, 15),  # 左髋-左膝-左踝
+                # 右腿
+                (12, 14), (14, 16),  # 右髋-右膝-右踝
+            ]
+            
+            # 骨架颜色（BGR格式）- 更鲜艳的颜色
+            skeleton_colors = {
+                'head': (255, 255, 0),      # 青色 - 头部
+                'torso': (0, 255, 255),     # 黄色 - 躯干
+                'left_arm': (255, 0, 255),  # 品红 - 左臂
+                'right_arm': (0, 255, 0),   # 绿色 - 右臂
+                'left_leg': (255, 165, 0),  # 橙色 - 左腿
+                'right_leg': (0, 0, 255),   # 红色 - 右腿
+            }
+            
+            def get_skeleton_color(idx1, idx2):
+                """根据连接的关键点返回对应颜色"""
+                if idx1 in [0, 1, 2, 3, 4] or idx2 in [0, 1, 2, 3, 4]:
+                    return skeleton_colors['head']
+                elif (idx1 in [5, 6, 11, 12] and idx2 in [5, 6, 11, 12]):
+                    return skeleton_colors['torso']
+                elif idx1 in [5, 7, 9] and idx2 in [5, 7, 9]:
+                    return skeleton_colors['left_arm']
+                elif idx1 in [6, 8, 10] and idx2 in [6, 8, 10]:
+                    return skeleton_colors['right_arm']
+                elif idx1 in [11, 13, 15] and idx2 in [11, 13, 15]:
+                    return skeleton_colors['left_leg']
+                elif idx1 in [12, 14, 16] and idx2 in [12, 14, 16]:
+                    return skeleton_colors['right_leg']
+                return (0, 255, 0)  # 默认绿色
+            
+            def draw_skeleton(frame, keypoints_xy, keypoints_conf, min_conf=0.5):
+                """在帧上绘制增强的骨架"""
+                # 绘制骨架连接线
+                for idx1, idx2 in skeleton_connections:
+                    if idx1 < len(keypoints_xy) and idx2 < len(keypoints_xy):
+                        conf1 = keypoints_conf[idx1] if keypoints_conf is not None else 1.0
+                        conf2 = keypoints_conf[idx2] if keypoints_conf is not None else 1.0
+                        
+                        if conf1 > min_conf and conf2 > min_conf:
+                            pt1 = (int(keypoints_xy[idx1][0]), int(keypoints_xy[idx1][1]))
+                            pt2 = (int(keypoints_xy[idx2][0]), int(keypoints_xy[idx2][1]))
+                            
+                            # 跳过无效点
+                            if pt1[0] > 0 and pt1[1] > 0 and pt2[0] > 0 and pt2[1] > 0:
+                                color = get_skeleton_color(idx1, idx2)
+                                # 绘制粗线条
+                                cv2.line(frame, pt1, pt2, color, 4, cv2.LINE_AA)
+                
+                # 绘制关键点
+                for i, (x, y) in enumerate(keypoints_xy):
+                    conf = keypoints_conf[i] if keypoints_conf is not None else 1.0
+                    if conf > min_conf and x > 0 and y > 0:
+                        pt = (int(x), int(y))
+                        # 绘制圆点
+                        cv2.circle(frame, pt, 6, (255, 255, 255), -1, cv2.LINE_AA)  # 白色填充
+                        cv2.circle(frame, pt, 6, (0, 0, 0), 2, cv2.LINE_AA)  # 黑色边框
+                
+                return frame
+            
             # 6. 逐帧处理
             frame_idx = 0
             processed_frames = 0
@@ -430,6 +503,8 @@ async def video_pose_estimation(request: VideoPoseRequest):
                     
                     # 解析当前帧的姿态
                     frame_poses = []
+                    annotated_frame = frame.copy()
+                    
                     for result in results:
                         if result.keypoints is not None:
                             keypoints_data = result.keypoints
@@ -438,6 +513,10 @@ async def video_pose_estimation(request: VideoPoseRequest):
                             for i in range(len(keypoints_data)):
                                 kpts = keypoints_data[i].xy[0].cpu().numpy()
                                 kpts_conf = keypoints_data[i].conf[0].cpu().numpy() if keypoints_data[i].conf is not None else None
+                                
+                                # 绘制增强骨架
+                                if request.return_video:
+                                    annotated_frame = draw_skeleton(annotated_frame, kpts, kpts_conf)
                                 
                                 # 获取边界框
                                 bbox = None
@@ -449,6 +528,16 @@ async def video_pose_estimation(request: VideoPoseRequest):
                                         "x2": float(x2),
                                         "y2": float(y2)
                                     }
+                                    # 绘制边界框
+                                    if request.return_video:
+                                        cv2.rectangle(annotated_frame, 
+                                                    (int(x1), int(y1)), (int(x2), int(y2)),
+                                                    (0, 255, 0), 2, cv2.LINE_AA)
+                                        # 添加人物标签
+                                        label = f"Person {i+1}"
+                                        cv2.putText(annotated_frame, label, 
+                                                   (int(x1), int(y1) - 10),
+                                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                                 
                                 # 构建关键点信息
                                 keypoints = []
@@ -476,9 +565,8 @@ async def video_pose_estimation(request: VideoPoseRequest):
                     
                     processed_frames += 1
                     
-                    # 绘制标注帧
+                    # 写入标注帧
                     if request.return_video:
-                        annotated_frame = results[0].plot()
                         out.write(annotated_frame)
                 else:
                     # 跳过的帧直接写入（不处理）

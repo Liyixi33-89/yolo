@@ -1139,6 +1139,41 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
 
     return (
       <div className="space-y-3">
+        {/* 🎬 标注视频播放器 - 最重要，放在最上面 */}
+        {annotatedVideo && (
+          <div className="rounded-xl overflow-hidden bg-black shadow-lg">
+            <div className="bg-gradient-to-r from-rose-500 to-pink-500 px-4 py-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-white">
+                  <span className="text-lg">🦴</span>
+                  <span className="font-medium">骨架可视化视频</span>
+                </div>
+                <button
+                  onClick={handleDownloadVideo}
+                  className="flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-sm text-white transition-colors hover:bg-white/30"
+                  aria-label="下载视频"
+                >
+                  <Download size={14} />
+                  <span>下载</span>
+                </button>
+              </div>
+            </div>
+            <div className="relative">
+              <video
+                ref={videoRef}
+                src={annotatedVideo}
+                className="w-full"
+                onEnded={() => setIsPlaying(false)}
+                playsInline
+                controls
+              />
+            </div>
+            <div className="bg-gray-900 px-4 py-2 text-center text-xs text-gray-400">
+              点击播放查看人物骨架动作追踪效果
+            </div>
+          </div>
+        )}
+
         {/* 视频信息概览 */}
         <div className="rounded-lg bg-rose-50 p-4">
           <div className="flex items-center gap-2 mb-3">
