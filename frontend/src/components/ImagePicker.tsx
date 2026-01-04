@@ -48,6 +48,13 @@ const ImagePicker = ({ onImageSelect, disabled = false }: ImagePickerProps) => {
       const file = e.target.files?.[0];
       if (!file) return;
 
+      // 检查文件大小（10MB限制）
+      const maxSize = 10 * 1024 * 1024;
+      if (file.size > maxSize) {
+        console.warn('[ImagePicker] 图片超过10MB限制');
+        return;
+      }
+
       // 压缩图像
       compressImage(file, 1024, 0.8).then((base64) => {
         setPreviewUrl(base64);
@@ -426,7 +433,7 @@ const ImagePicker = ({ onImageSelect, disabled = false }: ImagePickerProps) => {
           </div>
           
           <p className="text-center text-xs text-gray-500">
-            支持 JPG、PNG、WebP 等常见图片格式
+            支持 JPG、PNG、WebP 等格式，最大 10MB
           </p>
         </div>
       )}

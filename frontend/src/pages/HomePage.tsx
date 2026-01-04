@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { ArrowLeft, Send, RotateCcw, Zap, Cloud, Video } from 'lucide-react';
+import { Send, RotateCcw, Zap, Cloud, Video } from 'lucide-react';
+import { Toast, NavBar, Button } from 'antd-mobile';
 import { ImagePicker, VideoPicker, TaskSelector, ResultDisplay, Loading } from '../components';
 import { TaskType, isTencentTask, isBaiduTask, isVideoTask } from '../types';
 import {
@@ -33,6 +34,10 @@ import {
 
 type ResultData = DetectionData | ClassificationData | PoseData | SegmentData | LPRData | TencentDetectionData | TencentLabelData | TencentCarData | BaiduClassifyData | BaiduDetectData | BaiduFaceData | BaiduCarData | VideoPoseData | null;
 
+// 文件大小限制常量
+const IMAGE_MAX_SIZE = 10 * 1024 * 1024; // 10MB
+const VIDEO_MAX_SIZE = 20 * 1024 * 1024; // 20MB
+
 const HomePage = () => {
   const [selectedTask, setSelectedTask] = useState<TaskType>('detect');
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -41,7 +46,6 @@ const HomePage = () => {
   const [result, setResult] = useState<ResultData>(null);
   const [annotatedImage, setAnnotatedImage] = useState<string | null>(null);
   const [annotatedVideo, setAnnotatedVideo] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
 
   // 判断任务类型
@@ -52,21 +56,39 @@ const HomePage = () => {
 
   // 处理图片选择
   const handleImageSelect = useCallback((base64: string) => {
+    // 检查图片大小
+    const sizeInBytes = Math.ceil((base64.length * 3) / 4);
+    if (sizeInBytes > IMAGE_MAX_SIZE) {
+      Toast.show({
+        icon: 'fail',
+        content: '图片大小不能超过 10MB',
+      });
+      return;
+    }
+    
     setImageBase64(base64);
     setResult(null);
     setAnnotatedImage(null);
     setAnnotatedVideo(null);
-    setError(null);
     setShowResult(false);
   }, []);
 
   // 处理视频选择
   const handleVideoSelect = useCallback((base64: string) => {
+    // 检查视频大小
+    const sizeInBytes = Math.ceil((base64.length * 3) / 4);
+    if (sizeInBytes > VIDEO_MAX_SIZE) {
+      Toast.show({
+        icon: 'fail',
+        content: '视频大小不能超过 20MB',
+      });
+      return;
+    }
+    
     setVideoBase64(base64);
     setResult(null);
     setAnnotatedImage(null);
     setAnnotatedVideo(null);
-    setError(null);
     setShowResult(false);
   }, []);
 
@@ -76,7 +98,6 @@ const HomePage = () => {
     setResult(null);
     setAnnotatedImage(null);
     setAnnotatedVideo(null);
-    setError(null);
     setShowResult(false);
     // 切换任务类型时清除对应的媒体数据
     if (isVideoTask(task)) {
@@ -90,16 +111,21 @@ const HomePage = () => {
   const handleAnalyze = useCallback(async () => {
     // 检查输入
     if (isVideo && !videoBase64) {
-      setError('请先选择一个视频');
+      Toast.show({
+        icon: 'fail',
+        content: '请先选择一个视频',
+      });
       return;
     }
     if (!isVideo && !imageBase64) {
-      setError('请先选择或拍摄一张图片');
+      Toast.show({
+        icon: 'fail',
+        content: '请先选择或拍摄一张图片',
+      });
       return;
     }
 
     setIsLoading(true);
-    setError(null);
     setResult(null);
     setAnnotatedImage(null);
     setAnnotatedVideo(null);
@@ -184,9 +210,16 @@ const HomePage = () => {
       }
 
       setShowResult(true);
+      Toast.show({
+        icon: 'success',
+        content: '分析完成',
+      });
     } catch (err) {
       console.error('分析失败:', err);
-      setError(err instanceof Error ? err.message : '分析失败，请重试');
+      Toast.show({
+        icon: 'fail',
+        content: err instanceof Error ? err.message : '分析失败，请重试',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -199,7 +232,6 @@ const HomePage = () => {
     setResult(null);
     setAnnotatedImage(null);
     setAnnotatedVideo(null);
-    setError(null);
     setShowResult(false);
   }, []);
 
@@ -242,46 +274,33 @@ const HomePage = () => {
   return (
     <div className="flex h-full flex-col bg-gray-50">
       {/* 顶部导航栏 */}
-      <header className="sticky top-0 z-10 flex items-center justify-between bg-white px-4 py-3 shadow-sm">
-        {showResult ? (
-          <button
-            onClick={handleBackToEdit}
-            className="flex items-center gap-1 text-gray-600"
-            aria-label="返回"
-            tabIndex={0}
-          >
-            <ArrowLeft size={20} />
-            <span>返回</span>
-          </button>
-        ) : (
+      <NavBar
+        back={showResult ? '返回' : null}
+        onBack={showResult ? handleBackToEdit : undefined}
+        right={
+          showResult ? (
+            <div
+              onClick={handleReset}
+              className="flex items-center gap-1 text-primary-600 cursor-pointer"
+            >
+              <RotateCcw size={18} />
+              <span>重新</span>
+            </div>
+          ) : null
+        }
+        className="bg-white shadow-sm"
+      >
+        {showResult ? '识别结果' : (
           <div className="flex items-center gap-2">
             {typeof brandInfo.icon === 'string' ? (
-              <span className="text-2xl">{brandInfo.icon}</span>
+              <span className="text-lg">{brandInfo.icon}</span>
             ) : (
               brandInfo.icon
             )}
-            <span className="text-lg font-bold text-gray-800">{brandInfo.name}</span>
+            <span className="font-medium text-gray-800">{brandInfo.name}</span>
           </div>
         )}
-        
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-base font-medium text-gray-800">
-          {showResult ? '识别结果' : isVideo ? '视频分析' : '视觉识别'}
-        </h1>
-        
-        {showResult ? (
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-1 text-primary-600"
-            aria-label="重新开始"
-            tabIndex={0}
-          >
-            <RotateCcw size={18} />
-            <span>重新</span>
-          </button>
-        ) : (
-          <div className="w-16" />
-        )}
-      </header>
+      </NavBar>
 
       {/* 主要内容区 */}
       <main className="flex-1 overflow-y-auto p-4">
@@ -301,7 +320,7 @@ const HomePage = () => {
             {/* 图片/视频选择 */}
             <section className="rounded-2xl bg-white p-4 shadow-sm">
               <h2 className="mb-3 text-sm font-medium text-gray-700">
-                {isVideo ? '选择视频' : '选择图片'}
+                {isVideo ? '选择视频（最大 20MB）' : '选择图片（最大 10MB）'}
               </h2>
               {isVideo ? (
                 <VideoPicker
@@ -324,13 +343,6 @@ const HomePage = () => {
                 disabled={isLoading}
               />
             </section>
-
-            {/* 错误提示 */}
-            {error && (
-              <div className="rounded-lg bg-red-50 p-3 text-center text-sm text-red-600">
-                {error}
-              </div>
-            )}
           </div>
         )}
       </main>
@@ -339,31 +351,26 @@ const HomePage = () => {
       {!showResult && (
         <footer className="sticky bottom-0 bg-white p-4 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
           <div className="mx-auto max-w-lg">
-            <button
+            <Button
+              block
+              color="primary"
+              size="large"
               onClick={handleAnalyze}
               disabled={!canSubmit || isLoading}
-              className={`
-                flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-medium transition-all
-                ${canSubmit && !isLoading
-                  ? `${brandColor.bg} text-white shadow-lg ${brandColor.shadow} active:scale-[0.98]`
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                }
-              `}
-              aria-label="开始识别"
-              tabIndex={0}
+              loading={isLoading}
+              className={`rounded-xl ${canSubmit && !isLoading ? brandColor.bg : ''}`}
+              style={{
+                '--background-color': canSubmit && !isLoading ? undefined : '#e5e7eb',
+                '--text-color': canSubmit && !isLoading ? '#fff' : '#9ca3af',
+              } as React.CSSProperties}
             >
-              {isLoading ? (
-                <>
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  <span>{isVideo ? '处理中...' : '识别中...'}</span>
-                </>
-              ) : (
-                <>
-                  {isVideo ? <Video size={20} /> : isCloud ? <Cloud size={20} /> : <Send size={20} />}
-                  <span>{isVideo ? '开始分析' : isCloud ? '云端识别' : '本地识别'}</span>
-                </>
-              )}
-            </button>
+              <span className="flex items-center justify-center gap-2">
+                {!isLoading && (
+                  isVideo ? <Video size={20} /> : isCloud ? <Cloud size={20} /> : <Send size={20} />
+                )}
+                <span>{isLoading ? '处理中...' : isVideo ? '开始分析' : isCloud ? '云端识别' : '本地识别'}</span>
+              </span>
+            </Button>
           </div>
         </footer>
       )}

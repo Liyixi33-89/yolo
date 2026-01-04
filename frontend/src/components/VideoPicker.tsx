@@ -42,10 +42,10 @@ const VideoPicker = ({ onVideoSelect, disabled = false }: VideoPickerProps) => {
           throw new Error('请选择视频文件');
         }
 
-        // 限制文件大小（50MB）
-        const maxSize = 50 * 1024 * 1024;
+        // 限制文件大小（20MB）
+        const maxSize = 20 * 1024 * 1024;
         if (file.size > maxSize) {
-          throw new Error('视频文件不能超过 50MB');
+          throw new Error('视频文件不能超过 20MB');
         }
 
         // 创建预览 URL
@@ -217,7 +217,7 @@ const VideoPicker = ({ onVideoSelect, disabled = false }: VideoPickerProps) => {
               </div>
               <div className="text-center">
                 <p className="text-sm font-medium text-gray-700">点击选择视频</p>
-                <p className="mt-1 text-xs text-gray-400">支持 MP4、WebM 等格式，最大 50MB</p>
+                <p className="mt-1 text-xs text-gray-400">支持 MP4、WebM 等格式，最大 20MB</p>
               </div>
             </>
           )}

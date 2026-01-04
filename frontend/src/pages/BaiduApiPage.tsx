@@ -4,6 +4,7 @@ import {
   Mic, Search, ImageIcon, Upload, Play, Square,
   ArrowLeft, RotateCcw, Loader2, ChevronDown, AlertTriangle
 } from 'lucide-react';
+import { Toast } from 'antd-mobile';
 import { ImagePicker, Loading } from '../components';
 import { 
   getRecordingCapability, 
@@ -451,8 +452,16 @@ const BaiduApiPage = () => {
 
       setResult(response.data);
       setShowResult(true);
+      Toast.show({
+        icon: 'success',
+        content: '分析完成',
+      });
     } catch (err) {
       console.error('API 调用失败:', err);
+      Toast.show({
+        icon: 'fail',
+        content: err instanceof Error ? err.message : 'API 调用失败，请重试',
+      });
       setError(err instanceof Error ? err.message : 'API 调用失败，请重试');
     } finally {
       setIsLoading(false);
