@@ -1139,13 +1139,12 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
 
     return (
       <div className="space-y-3">
-        {/* 🎬 标注视频播放器 - 最重要，放在最上面 */}
+        {/* 标注视频播放器 - 最重要，放在最上面 */}
         {annotatedVideo && (
           <div className="rounded-xl overflow-hidden bg-black shadow-lg">
             <div className="bg-gradient-to-r from-rose-500 to-pink-500 px-4 py-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-white">
-                  <span className="text-lg">🦴</span>
                   <span className="font-medium">骨架可视化视频</span>
                 </div>
                 <button
@@ -1203,7 +1202,7 @@ const ResultDisplay = ({ task, data, annotatedImage, annotatedVideo }: ResultDis
         {/* 骨架可视化 */}
         {framesWithPoses.length > 0 && (
           <div className="rounded-lg border border-rose-200 bg-white p-3">
-            <h4 className="mb-3 text-sm font-medium text-gray-700">🦴 人物骨架可视化</h4>
+            <h4 className="mb-3 text-sm font-medium text-gray-700">人物骨架可视化</h4>
             <div className="grid grid-cols-3 gap-2">
               {framesWithPoses.map((frameData, fIdx) => (
                 <div key={fIdx} className="flex flex-col items-center">

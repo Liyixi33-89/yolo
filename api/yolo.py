@@ -404,13 +404,20 @@ async def video_pose_estimation(request: VideoPoseRequest):
             ]
             
             # 5. 准备输出视频
+            temp_avi_path = None
             if request.return_video:
+                # 先输出为 AVI 格式（使用 XVID 编码，兼容性好）
+                temp_avi = tempfile.NamedTemporaryFile(suffix='.avi', delete=False)
+                temp_avi_path = temp_avi.name
+                temp_avi.close()
+                
                 temp_output = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
                 temp_output_path = temp_output.name
                 temp_output.close()
                 
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
+                # 使用 XVID 编码输出 AVI
+                fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                out = cv2.VideoWriter(temp_avi_path, fourcc, fps, (width, height))
             
 # 骨架连接定义（用于手动绘制更清晰的骨架）
             skeleton_connections = [
@@ -579,6 +586,31 @@ async def video_pose_estimation(request: VideoPoseRequest):
             
             if request.return_video:
                 out.release()
+                
+                # 使用 ffmpeg 将 AVI 转换为 H.264 编码的 MP4（浏览器可播放）
+                import subprocess
+                try:
+                    ffmpeg_cmd = [
+                        'ffmpeg', '-y',
+                        '-i', temp_avi_path,
+                        '-c:v', 'libx264',
+                        '-preset', 'fast',
+                        '-crf', '23',
+                        '-pix_fmt', 'yuv420p',
+                        '-movflags', '+faststart',
+                        temp_output_path
+                    ]
+                    subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+                    logger.info(f"[VideoPose] FFmpeg 转码成功")
+                except subprocess.CalledProcessError as e:
+                    logger.warning(f"[VideoPose] FFmpeg 转码失败: {e.stderr.decode() if e.stderr else str(e)}")
+                    # 如果 ffmpeg 失败，尝试直接使用 OpenCV 输出
+                    import shutil
+                    shutil.copy(temp_avi_path, temp_output_path)
+                except FileNotFoundError:
+                    logger.warning("[VideoPose] FFmpeg 未安装，视频可能无法在浏览器播放")
+                    import shutil
+                    shutil.copy(temp_avi_path, temp_output_path)
             
             logger.info(f"[VideoPose] 处理完成: {processed_frames}/{total_frames} 帧")
             
@@ -613,6 +645,8 @@ async def video_pose_estimation(request: VideoPoseRequest):
                 os.unlink(temp_input_path)
             if temp_output_path and os.path.exists(temp_output_path):
                 os.unlink(temp_output_path)
+            if temp_avi_path and os.path.exists(temp_avi_path):
+                os.unlink(temp_avi_path)
     
     except HTTPException:
         raise
